@@ -6,6 +6,7 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.remote.webelement import WebElement
 from selenium.common.exceptions import StaleElementReferenceException, TimeoutException, NoSuchElementException
 import tab_utils
@@ -14,7 +15,33 @@ import mouse_trajectory
 import mimic_typing
 import element_selectors
 
-VISUAL_SEARCH_IMAGE_PATH = os.path.abspath("visual_search.jpg")
+VISUAL_SEARCH_ASSET_CANDIDATES = (
+	"/data/edge-profile/visual-search-asset.jpg",
+	"/data/edge-profile/visual_search.jpg",
+	"visual-search-asset.jpg",
+	"visual_search.jpg",
+)
+VISUAL_SEARCH_RUNS = 30
+FALLBACK_SEARCH_RUNS = 35
+REQUIRED_SEARCH_RUNS = 30
+SEARCH_PHRASE_POOL_SIZE = 600
+SEARCH_SCROLL_STEP_RANGE = (120, 360)
+SEARCH_SCROLL_STEPS_PER_QUERY = (1, 3)
+SEARCH_DWELL_SECONDS = (5.0, 6.0)
+SEARCH_QUERY_TEMPLATES = (
+	"{noun} facts",
+	"{noun} history",
+	"{noun} benefits",
+	"{noun} examples",
+	"{noun} guide {year}",
+	"best {noun} tips",
+	"how to use {noun}",
+	"{noun} for beginners",
+	"{noun} near me",
+	"{noun} latest news",
+	"{noun} interesting trivia",
+	"{noun} comparison",
+)
 
 class RewardsTaskUtils:
 	def __init__(self, driver: webdriver.Edge):
@@ -28,6 +55,7 @@ class RewardsTaskUtils:
 		self.mouse = mouse_trajectory.MouseUtils(driver)
 		self.keyboard = mimic_typing.KeyboardUtils(driver)
 		self.elements = element_selectors.ElementSelectionUtils(driver)
+		self.visual_search_image_path = self.resolve_visual_search_asset_path()
 
 	def find_element(self, xpath: str):
 		return self.driver.find_element(By.XPATH, xpath)
@@ -56,6 +84,38 @@ class RewardsTaskUtils:
 	def wait_for_then_click(self, element_getter: Callable[[], WebElement], timeout: int = 10):
 		elem = self.wait_for_element(element_getter, timeout)
 		self.move_to_and_click(elem)
+
+	def log_action(self, context: str, detail: str, trigger: str):
+		print(f"[ACTION] {context} [{detail}] trigger={trigger}")
+
+	def resolve_visual_search_asset_path(self) -> str:
+		for candidate in VISUAL_SEARCH_ASSET_CANDIDATES:
+			path = candidate if os.path.isabs(candidate) else os.path.abspath(candidate)
+			if os.path.exists(path):
+				print(f"[INFO] Visual search asset: {path}")
+				return path
+
+		raise FileNotFoundError(
+			"No visual search asset found. Provide one of: "
+			+ ", ".join(VISUAL_SEARCH_ASSET_CANDIDATES)
+		)
+
+	def resolve_positive_int_env(self, name: str, default: int) -> int:
+		value = os.environ.get(name)
+		if value is None:
+			return default
+
+		try:
+			parsed = int(value)
+		except ValueError:
+			print(f"[WARNING] Ignoring invalid {name}={value!r}; expected integer")
+			return default
+
+		if parsed <= 0:
+			print(f"[WARNING] Ignoring invalid {name}={value!r}; expected > 0")
+			return default
+
+		return parsed
 
 	def complete_bing_daily_set(self, expected_activities: int = 3):
 		self.switch_to_earn_page()
@@ -87,6 +147,8 @@ class RewardsTaskUtils:
 			if index >= len(activities):
 				break
 
+			description = self.elements.extract_card_descriptions(activities[index])
+			self.log_action("Daily set", description, "Rewards daily set activity")
 			self.move_to_and_click(activities[index])
 			time.sleep(random.uniform(2, 3))
 			self.driver.switch_to.window(self.driver.current_window_handle) # refocus on the main tab
@@ -108,6 +170,7 @@ class RewardsTaskUtils:
 		for card in explore_on_bing_links:
 			desc = self.elements.extract_card_descriptions(card)
 			query = llm_utils.get_search_query_from_task_description(desc)
+			self.log_action("Explore on Bing", query, desc)
 
 			self.move_to_and_click(card)
 			self.tab_utils.switch_to_other_tab()
@@ -129,24 +192,45 @@ class RewardsTaskUtils:
 			if not self.elements.card_is_complete(card):
 				print(f"[WARNING] Explore on Bing Card [desc={self.elements.extract_card_descriptions(card)!r}] is not complete after searching. Please check manually.")
 
-	def complete_visual_search(self):
-		self.switch_to_earn_page()
+	def complete_visual_search(self, runs: int = VISUAL_SEARCH_RUNS):
+		runs = self.resolve_positive_int_env("VISUAL_SEARCH_RUNS", runs)
+		print(f"[INFO] Running visual search count: {runs}")
 
-		self.wait_for_then_click(self.elements.get_open_visual_search_sidebar)
+		# Preferred path: open from Rewards sidebar. Some variants do not expose
+		# it there, so fall back to Bing camera directly.
+		try:
+			self.switch_to_earn_page()
+			self.wait_for_then_click(self.elements.get_open_visual_search_sidebar)
+			self.wait_for_then_click(self.elements.get_search_now_link_from_visual_search_sidebar)
+			self.tab_utils.switch_to_other_tab()
+		except (NoSuchElementException, TimeoutException):
+			self.driver.get("https://www.bing.com/")
+			self.tab_utils.ensure_focus()
 
-		self.wait_for_then_click(self.elements.get_search_now_link_from_visual_search_sidebar)
+		completed = 0
 
-		self.tab_utils.switch_to_other_tab()
+		for run_index in range(runs):
+			self.driver.get("https://www.bing.com/")
+			self.tab_utils.ensure_focus()
 
-		self.wait_for_then_click(self.elements.get_visual_search_button)
+			try:
+				self.wait_for_then_click(self.elements.get_visual_search_button, timeout=20)
+				file_input = self.wait_for_element(self.elements.get_visual_search_file_input, timeout=20)
+				file_input.send_keys(self.visual_search_image_path)
+				completed += 1
+				self.log_action(
+					"Visual search",
+					f"{completed}/{runs}",
+					f"asset={os.path.basename(self.visual_search_image_path)}"
+				)
+				time.sleep(random.uniform(3, 5))
+			except (NoSuchElementException, TimeoutException, ValueError):
+				print(f"[WARNING] Visual search controls missing on run {run_index + 1}/{runs}")
+				time.sleep(random.uniform(1, 2))
 
-		file_input = self.wait_for_element(self.elements.get_visual_search_file_input)
+		if completed == 0:
+			raise NoSuchElementException("visual search controls not available on bing.com")
 
-		file_input.send_keys(VISUAL_SEARCH_IMAGE_PATH)
-
-		time.sleep(random.uniform(3, 5))
-
-		self.tab_utils.switch_to_other_tab()
 		self.tab_utils.close_all_other_tabs()
 
 	def complete_misc_cards(self):
@@ -170,39 +254,21 @@ class RewardsTaskUtils:
 
 		self.mouse.wheel_scroll_to_top()
 
-	def complete_required_searches(self, max_rounds: int = 6):
-		# Points per search are not fixed. Some markets award 3 rather than 5,
-		# the daily maximum itself changes (observed 15, 30 and 60 on the same
-		# account within one day, with the counter resetting), and daily set and
-		# card searches count towards the same quota. A single up front division
-		# therefore leaves points on the table and still reports success.
-		# Measure, search, measure again.
-		points_earned, max_pts = self.read_search_points()
+	def complete_required_searches(self):
+		# Run a fixed number of searches every time.
+		# This keeps behavior stable even when the Rewards points breakdown
+		# panel is unavailable or translated differently.
+		runs = self.resolve_positive_int_env("REQUIRED_SEARCH_RUNS", REQUIRED_SEARCH_RUNS)
+		print(f"[INFO] Running required searches: {runs}")
 
-		print(f"[INFO] Search points before: {points_earned}/{max_pts}")
-
-		for round_number in range(1, max_rounds + 1):
-			if points_earned >= max_pts:
-				break
-
-			# Assume the lower known rate so a round never overshoots by much.
-			searches = max(1, (max_pts - points_earned) // 3)
-
-			self.run_search_batch(searches)
-
-			previous = points_earned
-			points_earned, max_pts = self.read_search_points()
-
-			print(f"[INFO] Round {round_number}: {searches} searches -> {points_earned}/{max_pts}")
-
-			if points_earned <= previous:
-				print("[WARNING] Round produced no points, stopping instead of searching pointlessly.")
-				break
-
-		if points_earned < max_pts:
-			print(f"[WARNING] Search quota not filled: {points_earned}/{max_pts}")
-		else:
-			print(f"Search quota complete: {points_earned}/{max_pts}")
+		try:
+			self.run_search_batch(runs)
+		except Exception as exc:
+			print(
+				f"[WARNING] Required search batch failed ({type(exc).__name__}); "
+				f"retrying with fallback batch of {FALLBACK_SEARCH_RUNS}."
+			)
+			self.run_search_batch(FALLBACK_SEARCH_RUNS)
 
 	def read_search_points(self):
 		"""Open the points breakdown, read the Bing search row, close it again."""
@@ -232,23 +298,78 @@ class RewardsTaskUtils:
 		self.wait_for_element(self.elements.get_bing_search_bar)
 
 		# search bar should be auto-focused
+		phrase_pool = self.build_search_phrase_pool()
 
-		for i, query in enumerate(
-			llm_utils.get_related_search_queries(
-				llm_utils.get_random_noun(), num_queries=count
+		try:
+			queries = random.sample(phrase_pool, count)
+		except Exception as exc:
+			queries = [random.choice(phrase_pool) for _ in range(count)]
+			print(
+				f"[WARNING] Could not sample unique search queries ({type(exc).__name__}); "
+				"using sampled-with-replacement queries."
 			)
-		):
+
+		for i, query in enumerate(queries):
+			self.log_action("Required searches", f"{i+1}/{count} {query}", "Fixed search batch")
 			self.keyboard.send_keys(f"{query} -noai{Keys.ENTER}")
+			self.random_scroll_and_dwell_after_search()
 
-			time.sleep(random.uniform(0.5, 1))
+			try:
+				self.wait_for_then_click(self.elements.get_clear_bing_search_query_button, timeout=3)
+			except (StaleElementReferenceException, NoSuchElementException, TimeoutException, ValueError):
+				# Some Bing variants do not expose the clear button consistently.
+				# Keep progressing searches by clearing via keyboard instead.
+				try:
+					self.wait_for_then_click(self.elements.get_bing_search_bar, timeout=3)
+				except (NoSuchElementException, TimeoutException):
+					pass
 
-			try: self.wait_for_then_click(self.elements.get_clear_bing_search_query_button)
-			except StaleElementReferenceException:
-				print(f"[WARNING] StaleElementReferenceException when trying to click the clear button for query {i+1}. Trying again...")
-				self.wait_for_then_click(self.elements.get_clear_bing_search_query_button)
+				self.keyboard.send_keys(f"{Keys.CONTROL}a{Keys.DELETE}")
 
 		self.driver.get("https://rewards.bing.com/")
 		self.tab_utils.ensure_focus()
+
+	def random_scroll_and_dwell_after_search(self):
+		"""Scroll down by a random amount and wait after each search."""
+		steps = random.randint(*SEARCH_SCROLL_STEPS_PER_QUERY)
+		total_distance = 0
+
+		for _ in range(steps):
+			distance = random.randint(*SEARCH_SCROLL_STEP_RANGE)
+			ActionChains(self.driver).scroll_by_amount(0, distance).perform()
+			total_distance += distance
+			time.sleep(random.uniform(0.08, 0.2))
+
+		dwell = random.uniform(*SEARCH_DWELL_SECONDS)
+		print(f"[INFO] Search page scroll={total_distance}px dwell={dwell:.2f}s")
+		time.sleep(dwell)
+
+	def build_search_phrase_pool(self) -> list[str]:
+		"""Build a large phrase pool from nouns, sampled randomly every run."""
+		nouns = list({noun.strip().lower() for noun in llm_utils.NOUNS if noun.strip()})
+
+		if not nouns:
+			return [f"general topic {i+1}" for i in range(SEARCH_PHRASE_POOL_SIZE)]
+
+		random.shuffle(nouns)
+		years = (2024, 2025, 2026)
+		pool: list[str] = []
+
+		for noun in nouns:
+			template = random.choice(SEARCH_QUERY_TEMPLATES)
+			pool.append(template.format(noun=noun, year=random.choice(years)))
+
+			if len(pool) >= SEARCH_PHRASE_POOL_SIZE:
+				break
+
+		if len(pool) < SEARCH_PHRASE_POOL_SIZE:
+			while len(pool) < SEARCH_PHRASE_POOL_SIZE:
+				noun = random.choice(nouns)
+				template = random.choice(SEARCH_QUERY_TEMPLATES)
+				pool.append(template.format(noun=noun, year=random.choice(years)))
+
+		print(f"[INFO] Built search phrase pool: {len(pool)}")
+		return pool
 
 	def claim_bonus_points(self):
 		self.switch_to_dashboard()
@@ -272,6 +393,35 @@ class RewardsTaskUtils:
 			("Required searches", self.complete_required_searches),
 			("Bonus points", self.claim_bonus_points),
 		)
+
+		requested_task = os.environ.get("REWARDS_TASK", "all").strip().lower()
+		task_aliases = {
+			"all": "all",
+			"daily_set": "Bing daily set",
+			"bing_daily_set": "Bing daily set",
+			"explore": "Explore on Bing",
+			"explore_on_bing": "Explore on Bing",
+			"visual": "Visual search",
+			"visual_search": "Visual search",
+			"misc": "Misc cards",
+			"misc_cards": "Misc cards",
+			"searches": "Required searches",
+			"required_searches": "Required searches",
+			"bonus": "Bonus points",
+			"bonus_points": "Bonus points",
+		}
+
+		if requested_task not in task_aliases:
+			raise ValueError(
+				f"Unknown REWARDS_TASK={requested_task!r}. "
+				f"Supported values: {', '.join(sorted(task_aliases.keys()))}"
+			)
+
+		selected_task_name = task_aliases[requested_task]
+
+		if selected_task_name != "all":
+			steps = tuple(step for step in steps if step[0] == selected_task_name)
+			print(f"[INFO] Running single task mode: {selected_task_name}")
 
 		for name, step in steps:
 			try:
