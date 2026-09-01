@@ -213,10 +213,17 @@ class BingMobileFlow:
         if "Success" not in r.stdout:
             raise RuntimeError(f"pm clear failed: {r.stdout}{r.stderr}")
 
-    def launch(self):
+    def relaunch(self):
+        """Cold restart. Warm tasks resume wherever left off (e.g. Rewards
+        TemplateActivity — cron-sim 2026-09-01); app_start alone does NOT fix that."""
         action("launch", PKG)
+        self.d.app_stop(PKG)
+        time.sleep(1)
         self.d.app_start(PKG, LAUNCH_ACTIVITY)
         time.sleep(6)
+
+    def launch(self):
+        self.relaunch()
 
     def dismiss_fre(self, timeout=12):
         """FRE check via its button — window focus may be held by a permission dialog."""
@@ -262,18 +269,18 @@ class BingMobileFlow:
                 return True
             if ACT_CAMERA in self.focus() or "permissioncontroller" in self.focus():
                 self.recover_camera()
-                continue
-            if self.d(resourceId=SEARCH_BOX).exists:
+            elif self.d(resourceId=SEARCH_BOX).exists:
                 # search box but no profile button = MSN feed view over home (same
                 # activity); back pops it (prod_2 dump 2026-09-01: feed header lacks
                 # sa_profile_button).
                 action("recover", "back out of feed view")
                 self.press("back", "feed-to-home")
                 time.sleep(3)
-                continue
-            action("recover", "relaunch to home")
-            self.d.app_start(PKG, LAUNCH_ACTIVITY)
-            time.sleep(6)
+            else:
+                # warm-resume views (e.g. Rewards TemplateActivity) ignore a plain
+                # app_start — only a cold relaunch lands on home.
+                action("recover", "relaunch to home (cold)")
+                self.relaunch()
         return False
 
     def search_and_results(self):
@@ -507,6 +514,8 @@ class BingMobileFlow:
                 self.recover_camera()
             elif self.d(resourceId=SEARCH_BOX).exists:
                 self.press("back", "feed-to-home")  # MSN feed view, not home
+            else:
+                self.relaunch()  # warm-resume (e.g. Rewards page) needs a cold start
             time.sleep(1)
         self.shot("home-timeout")
         raise RuntimeError(f"never reached home ({ACT_HOME}); focus={self.focus()}")
