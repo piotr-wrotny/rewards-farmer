@@ -18,11 +18,13 @@ translation), server `10.17.103.115`, container `redroid` (see AGENTS.md § Mobi
 for the DNS-required docker run). Driver: `src/bing_mobile_flow.py` (uiautomator2) from
 the Windows dev machine via SSH tunnel `15555 → 127.0.0.1:5555`. Screen 720x1280@320.
 
-Every step is verified by a screenshot in `artifacts/screenshots/` (+ UI hierarchy dump
-in `artifacts/ui/`); `--debug` adds a screenshot per executed action. Actions are logged
-as `[ACTION] <context> [<detail>] trigger=<source>`.
+Every step is verified by a screenshot in `artifacts/<mode>/screenshots/` (+ UI hierarchy
+dump in `artifacts/<mode>/ui/`). `--mode dev` (default) = test path evidence; `--mode prod`
+= evidence from signed-in runs; the two are never mixed. `--debug` adds a screenshot per
+executed action. `--clear` is refused in `prod` (it would log the account out). Actions
+are logged as `[ACTION] <context> [<detail>] trigger=<source>`.
 
-## Step map (verified 2026-09-01, evidence: artifacts/screenshots/NN-*)
+## Step map (verified 2026-09-01, evidence: artifacts/dev/screenshots/NN-*)
 
 
 | # | Step | Selector / detection | Evidence shot | test-only? |

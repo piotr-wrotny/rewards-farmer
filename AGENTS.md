@@ -73,14 +73,16 @@ docker run --detach --name redroid --privileged \
 
 `androidboot.redroid_net_ndns` is REQUIRED — bare `redroid_net_dns1/2` props are ignored by netd.
 
-Dev runs from the Windows machine (tunnel first):
+Two execution modes, evidence kept separately (`--mode dev|prod`):
 
 ```bash
 ssh -N -L 15555:127.0.0.1:5555 piotr.wrotny@10.17.103.115
-python src/bing_mobile_flow.py --debug [--iters N] [--clear]
+python src/bing_mobile_flow.py --mode dev --debug [--iters N] [--clear]   # test path (logged-out)
+python src/bing_mobile_flow.py --mode prod --debug [--iters N]            # signed-in (no --clear!)
 ```
 
-- Every step produces a screenshot in `artifacts/screenshots/` (+ UI dumps in `artifacts/ui/`); `--debug` adds one per executed action.
-- `--clear` wipes Bing app data (`pm clear`) so FRE/onboarding reappear — dev/testing only; Prod keeps the app signed in.
-- Permission dialogs are auto-allowed in dev mode.
-- Logged-out terminal state: Rewards page shows the 'Join Microsoft Rewards' sign-in wall; Read-to-earn requires an account (Prod path).
+- Evidence: `artifacts/<mode>/screenshots/` (+ `artifacts/<mode>/ui/`); `--debug` adds a screenshot per executed action.
+- `--clear` wipes Bing app data (`pm clear`) so FRE/onboarding reappear — dev/testing only; refused in `prod` (would log the account out).
+- Permission dialogs are auto-allowed (dev path; prod keeps them only as a safety net).
+- Logged-out terminal state: Rewards page shows the 'Join Microsoft Rewards' sign-in wall; Read-to-earn requires the signed-in prod path.
+- Step-by-step selector map: `docs/bing-mobile-flow.md`.

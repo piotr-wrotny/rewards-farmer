@@ -9,10 +9,9 @@ docs/bing-mobile-flow.md.
 Path (per Proof-Of-Concept-Artifacts): launch -> FRE dismiss -> home ready-check ->
 search -> results (BrowserActivity) -> Rewards (profile menu) -> Read to earn attempt ->
 article loop -> evidence in artifacts/.
-
 Dev mode runs WITHOUT a Microsoft account. Every flow step is verified by a screenshot
-in artifacts/screenshots/ (plus UI dumps in artifacts/ui/). With --debug, EVERY executed
-action (tap/swipe/key/text/permission/launch/back) also produces a screenshot.
+in artifacts/<mode>/screenshots/ (plus UI dumps in artifacts/<mode>/ui/). With --debug,
+EVERY executed action (tap/swipe/key/text/permission/launch/back) also produces a screenshot.
 
 Terminal logged-out state: Rewards page shows the "Join Microsoft Rewards" wall
 ("Access now" -> OneAuth sign-in -> needs network/account). The flow detects the wall,
@@ -70,9 +69,12 @@ RTE_DONE_TEXT = re.compile(r'text="Read to earn, \d+ points earned"')
 SIGNIN_WALL = re.compile(r"Join Microsoft Rewards|Access now")
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ART_DIR = os.path.join(ROOT, "artifacts")
-SHOT_DIR = os.path.join(ART_DIR, "screenshots")
-UI_DIR = os.path.join(ART_DIR, "ui")
+ART_DIR = os.path.join(ROOT, "artifacts")  # artifacts/<mode>/{screenshots,ui} — dev vs prod
+
+
+def mode_dirs(mode):
+    base = os.path.join(ART_DIR, mode)
+    return os.path.join(base, "screenshots"), os.path.join(base, "ui")
 
 
 def log(msg):
@@ -85,13 +87,15 @@ def action(context, detail="", trigger="flow"):
 
 
 class BingMobileFlow:
-    def __init__(self, serial, debug=False, query="hello world"):
+    def __init__(self, serial, debug=False, query="hello world", mode="dev"):
         self.serial = serial
         self.debug = debug
         self.query = query
+        self.mode = mode
         self.seq = 0
-        os.makedirs(SHOT_DIR, exist_ok=True)
-        os.makedirs(UI_DIR, exist_ok=True)
+        self.shot_dir, self.ui_dir = mode_dirs(mode)
+        os.makedirs(self.shot_dir, exist_ok=True)
+        os.makedirs(self.ui_dir, exist_ok=True)
         self.d = u2.connect(serial)
         self.d.implicitly_wait(5)
         self.w = self.d.info["displayWidth"]
@@ -116,19 +120,15 @@ class BingMobileFlow:
     def shot(self, label, ui_dump=True):
         self.seq += 1
         name = f"{self.seq:02d}-{re.sub(r'[^a-z0-9]+', '-', label.lower()).strip('-')}"
-        path = os.path.join(SHOT_DIR, name + ".png")
+        path = os.path.join(self.shot_dir, name + ".png")
         self.d.screenshot(path)
         log(f"[SHOT] {path} focus={self.activity()}")
         if ui_dump:
             xml = self.d.dump_hierarchy()
-            with open(os.path.join(UI_DIR, name + ".xml"), "w", encoding="utf-8") as f:
+            with open(os.path.join(self.ui_dir, name + ".xml"), "w", encoding="utf-8") as f:
                 f.write(xml)
         return name
 
-    def act_shot(self, label):
-        """Per-action screenshot: always in --debug, no-op otherwise."""
-        if self.debug:
-            self.shot(f"action-{label}", ui_dump=False)
 
     # ------------------------------------------------------------- primitives
     def tap(self, target, label):
@@ -140,6 +140,12 @@ class BingMobileFlow:
         else:
             self.d.click(*target)
         self.act_shot(f"tap-{label}")
+
+    def act_shot(self, label):
+        """Per-action screenshot: always in --debug, no-op otherwise."""
+        if self.debug:
+            time.sleep(1.5)  # let screen repaint after the action; screencap otherwise is stale
+            self.shot(f"action-{label}", ui_dump=False)
 
     def swipe(self, fx, fy, tx, ty, label, duration=0.3):
         action("swipe", f"{label} ({fx:.2f},{fy:.2f})->({tx:.2f},{ty:.2f})")
@@ -367,7 +373,7 @@ class BingMobileFlow:
 
     # ------------------------------------------------------------- orchestration
     def run(self, iterations):
-        log(f"connected serial={self.serial} screen={self.w}x{self.h} debug={self.debug}")
+        log(f"connected mode={self.mode} serial={self.serial} screen={self.w}x{self.h} debug={self.debug}")
         self.launch()
         self.shot("after-launch")
         if self.dismiss_fre():
@@ -447,16 +453,19 @@ def main():
     p.add_argument("--debug", action="store_true", help="screenshot every executed action")
     p.add_argument("--clear", action="store_true",
                    help="dev-only: wipe Bing app data first (pm clear)")
+    p.add_argument("--mode", choices=("dev", "prod"), default="dev",
+                   help="evidence bucket under artifacts/<mode>/ (dev=test path, prod=signed-in)")
     a = p.parse_args()
 
     check_serial(a.serial)
-    flow = BingMobileFlow(a.serial, debug=a.debug, query=a.query)
+    flow = BingMobileFlow(a.serial, debug=a.debug, query=a.query, mode=a.mode)
     if a.clear:
+        if a.mode == "prod":
+            p.error("--clear would log out the prod account — dev mode only")
         flow.clear_app_data(a.server)
-        time.sleep(3)
     result = flow.run(a.iters)
     log(f"DONE state={result['state']} articles_read={result['articles_read']}")
-    log(f"evidence: {SHOT_DIR}")
+    log(f"evidence: {mode_dirs(a.mode)[0]}")
 
 
 if __name__ == "__main__":
