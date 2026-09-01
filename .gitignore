@@ -5,4 +5,7 @@ visual_search.json
 !nouns.txt
 Todo.md
 data-dir/
-__pycache__/
+__pycache__/edge-profile/
+android-data/
+artifacts/
+logs/
