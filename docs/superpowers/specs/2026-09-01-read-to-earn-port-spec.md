@@ -1,6 +1,8 @@
 # Read-to-earn e2e port spec (old Android-emulator flow → ReDroid driver)
 
-Source of truth: `deploy/read_to_earn.py` (277 lines, imports only random/re/sys/time/
+Source of truth: `deploy/read_to_earn.py` (277 lines; removed from HEAD in the
+post-checkpoint slim-down — recover with `git show flow-working-20260901:deploy/read_to_earn.py`)
+imports only random/re/sys/time/
 uiautomator2 at :16-21). Produced by code analysis 2026-09-01; port target
 `src/bing_mobile_flow.py`. All line citations refer to `deploy/read_to_earn.py`
 unless noted.
