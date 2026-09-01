@@ -47,21 +47,39 @@ refused on prod profiles (it would log the account out). Actions are logged as
 | 12 | Rewards page | `text="Microsoft Rewards"` → focus `…runtime.templates.TemplateActivity` | `14/15-rewards-page` | |
 | 13 | Classify Rewards state; **wall = TEST PATH TERMINAL** | dump regex: `Join Microsoft Rewards|Access now` → `wall`; RTE card `content-desc="Read to earn, , N out of M points earned"` → `rte`; done text `Read to earn, N points earned` → `done` | `16-rewards-state-<state>` | |
 
-## Test path vs future production path
+## WORKING STATE (verified 2026-09-01, profile `prod_2` / 616piotrek@gmail.com)
 
-| | Test path (this map) | Production path (owner credentials) |
+Signed-in path works on ReDroid via `./bing.sh run screenshot --profile prod_2` (exit 0,
+`state=home`). Verified end-to-end with evidence in `artifacts/prod_2/`:
+
+| Action | Result | Evidence |
+|---|---|---|
+| Launch + settle at home | `MainSapphireActivity`, `sa_search_box` present, NO FRE/popups (signed-in: no first-run noise, as predicted) | `screenshots/01-after-launch.png`, `02-home-ready.png` |
+| Profile menu | email + Total/Daily points visible, no "Sign in" | `screenshots/02-prod-profile-prod2-CONFIRM.png` (earlier session) |
+| Rewards page | profile → `text="Microsoft Rewards"` → focus `TemplateActivity` | `screenshots/demo-1-rewards.png`, `ui/demo-rewards.xml` |
+| Search opens browser tab | query → `BrowserActivity` (SERP) | `screenshots/demo-4-serp-tab.png` |
+| Tab manager | `description="Tabs"` works; lists `Tab: Rewards`, `Tab: pogoda Krakow` (×2 each) | `screenshots/demo-5-tabmanager-2tabs.png`, `ui/demo-tabmanager-2.xml` |
+| **Tab switch** | click `Tab: Rewards` → focus `TemplateActivity`; pixel-diff vs `demo-1-rewards` = **0.001** (same page), vs SERP = 0.71 | `screenshots/demo-6-switched-to-rewards.png` |
+
+Notes from the demo: each Rewards visit opens ANOTHER "Rewards" tab (duplicates pile up —
+tab hygiene from the old emulator flow matters); tab selectors (`Tabs`, `Tab: <name>`,
+`Close tab: <name>`) are identical to `deploy/read_to_earn.py`.
+
+## Test path vs production path
+
+| | Test path (`test`) | Production path (`prod_N`) |
 |---|---|---|
 | Account | none (logged out) | signed-in MS account |
-| Entry noise | FRE, permission prompts, region popup every run (after `--clear`) | none — first-run already done, permissions granted |
-| Rewards page | "Join Microsoft Rewards" wall (`Access now` → OneAuth, ends at `[2603]`/wall) | full dashboard: streak, Daily set, **Read to earn** card |
+| Entry noise | FRE, permission prompts, region popup every run (after `--clear`) | none — first-run already done, permissions granted (verified in WORKING STATE above) |
+| Rewards page | "Join Microsoft Rewards" wall (`Access now` → OneAuth) | full dashboard: `TemplateActivity`, streak/points (verified) |
 | Permission/popup handlers | exercised every run — that is their purpose | present as safety net only; not flow steps |
-| Dev reset | `--clear` (adb `pm clear`) between attempts | never (would log out) |
-| Verification | screenshot per step/iteration in `artifacts/` | server logs `[ACTION]` lines |
+| Reset | `bing.sh clear` (adb `pm clear`) between attempts | never (would log out; exit 3 guard) |
+| Verification | screenshot per step/iteration in `artifacts/<profile>/` | server logs `[ACTION]` lines + demo trail above |
 
 The emulator-era article heuristics (video/ad skip, source-line pairing) were ported
-verbatim from `deploy/read_to_earn.py` and are expected to work 1:1 on ReDroid — same app
-version, same `com.microsoft.bing:id/*` ids (PoC: selector parity, no coordinate use).
-They belong to the future production map and are not reachable on the test path.
+verbatim from `deploy/read_to_earn.py` and now belong to the production map (reachable on
+`prod_2`). Full old-flow spec for the 1:1 port: produced by EmulatorFlowSpec analysis —
+see `docs/superpowers/specs/` follow-up.
 
 
 ## Known states / gotchas
