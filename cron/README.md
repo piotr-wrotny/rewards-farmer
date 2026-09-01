@@ -1,14 +1,20 @@
 # Cron (KRON) wiring
 
 KRON runs ON the server (`10.17.103.115`, existing scheduler process). Job lines call
-the same entrypoint humans use — no separate path. Paste into the scheduler's crontab
-(user must do this; agent never installs crontab unasked):
+the same entrypoint humans use — no separate path.
+
+ACTUALLY INSTALLED (server crontab, 2026-09-01; backup `~/crontab.backup-20260901`):
 
 ```cron
-# bing mobile flows — staggered so flock (/tmp/bing-5555.lock) never queues two runs.
-# Measured: read-to-earn 10 articles ≈ 6 min (prod_2, 2026-09-01).
-0 7 * * * /home/piotr.wrotny/rewards-farmer-main/bing.sh run read-to-earn --profile prod_2 --iters 60 >> /home/piotr.wrotny/rewards-farmer-main/logs/cron.log 2>&1
-30 8 * * * /home/piotr.wrotny/rewards-farmer-main/bing.sh run read-to-earn --profile prod_1 --iters 60 >> /home/piotr.wrotny/rewards-farmer-main/logs/cron.log 2>&1
+30 1 * * * /home/piotr.wrotny/rewards-farmer-main/run_daily.sh >/dev/null 2>&1
+0 2 * * * /home/piotr.wrotny/rewards-farmer-main/bing.sh run read-to-earn --profile prod_1 --iters 60 >> /home/piotr.wrotny/rewards-farmer-main/logs/cron.log 2>&1
+```
+
+Proposed, NOT installed: a `prod_2` read-to-earn line (stagger so flock
+`/tmp/bing-5555.lock` never queues two runs; measured ≈ 6 min for 10 articles):
+
+```cron
+# 0 6 * * * /home/piotr.wrotny/rewards-farmer-main/bing.sh run read-to-earn --profile prod_2 --iters 60 >> /home/piotr.wrotny/rewards-farmer-main/logs/cron.log 2>&1
 ```
 
 - Times: daily quotas reset at midnight UTC (points verified 2026-09-01); one run per
