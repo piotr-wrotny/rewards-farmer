@@ -104,8 +104,9 @@ case "$cmd" in
     docker run --rm -v "$HOME:/host" busybox sh -c \
       "tar -C /host/profile-factory-data -czf /host/profile-snapshots/$p.tar.gz ." || die "tar failed" 3
     docker start redroid-factory >/dev/null
-    # never trust a snapshot blind (gotchas #2): require real content
-    tar -tzf "$SNAP/$p.tar.gz" | grep -q "system/packages.xml" || die "snapshot $p looks empty/corrupt" 3
+    # never trust a snapshot blind (gotchas #2): require real content. Plain grep
+    # (NOT grep -q): -q closes the pipe early -> tar SIGPIPE -> pipefail false alarm.
+    tar -tzf "$SNAP/$p.tar.gz" | grep "system/packages.xml" >/dev/null || die "snapshot $p looks empty/corrupt" 3
     ls -la "$SNAP/$p.tar.gz" ;;
   *) usage ;;
 esac

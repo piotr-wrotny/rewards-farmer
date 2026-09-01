@@ -15,7 +15,7 @@ ssh piotr.wrotny@10.17.103.115 'p=<name>; mkdir -p ~/redroid-variants/$p && dock
 |------|------|---------|----------|--------|
 | test | anonymous | — | `test.tar.gz` | rebuilt 2026-09-01 from factory baseline (`pm clear` + `cp -a`); `bing.sh clear` allowed |
 | prod_2 | signed-in | 616piotrek@gmail.com | `prod_2.tar.gz` | READ-TO-EARN e2e VERIFIED 2026-09-01: 30/30 daily pts, 2 sessions (`docs/bing-mobile-flow.md` § Read-to-earn e2e) |
-| prod_1 | signed-in | TBD | — | to be created via factory after prod_2 e2e port |
+| prod_1 | signed-in | piotrwro01@gmail.com | `prod_1.tar.gz` | VERIFIED signed-in 2026-09-01 (factory login → snapshot → variant); RTE `30 points earned` |
 
 Snapshot hygiene: verify every snapshot with `tar -tzf <f> | grep system/packages.xml`
 and size > 100 MB before trusting it (`docs/re-droid-gotchas.md` #2). NEVER `chown` a
