@@ -12,3 +12,10 @@ artifacts/
 logs/
 bin/
 assets/*.apk
+
+# profile vault — NEVER commit plaintext app-data archives
+profiles/
+!profiles/README.md
+*.tar
+*.tar.gz
+*.tar.enc.key
