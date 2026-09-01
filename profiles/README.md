@@ -8,7 +8,7 @@ commit profile data**, see `.gitignore`). Switch: `./bing.sh use <name>`. Create
 credentials) then `factory.ps1 save <name>`. New variant from snapshot:
 
 ```bash
-ssh piotr.wrotny@10.17.103.115 'p=<name>; mkdir -p ~/redroid-variants/$p && docker run --rm -v /home/piotr.wrotny:/host busybox sh -c "mkdir -p /host/redroid-variants/$p && tar -C /host/redroid-variants/$p -xzf /host/profile-snapshots/$p.tar.gz" && cd ~/rewards-farmer-main && ./bing.sh use $p'
+ssh piotr.wrotny@10.17.103.115 'p=<name>; docker run --rm -v /home/piotr.wrotny:/host busybox sh -c "mkdir -p /host/redroid-variants/$p && tar -C /host/redroid-variants/$p -xzf /host/profile-snapshots/$p.tar.gz" && cd ~/rewards-farmer-main && ./bing.sh use $p'
 ```
 
 | name | kind | account | snapshot | status |
@@ -17,6 +17,8 @@ ssh piotr.wrotny@10.17.103.115 'p=<name>; mkdir -p ~/redroid-variants/$p && dock
 | prod_2 | signed-in | 616piotrek@gmail.com | `prod_2.tar.gz` | READ-TO-EARN e2e VERIFIED 2026-09-01: 30/30 daily pts, 2 sessions (`docs/bing-mobile-flow.md` § Read-to-earn e2e) |
 | prod_1 | signed-in | piotrwro01@gmail.com | `prod_1.tar.gz` | VERIFIED signed-in 2026-09-01 (factory login → snapshot → variant); RTE `30 points earned` |
 
-Snapshot hygiene: verify every snapshot with `tar -tzf <f> | grep system/packages.xml`
-and size > 100 MB before trusting it (`docs/re-droid-gotchas.md` #2). NEVER `chown` a
-volume (#1).
+Snapshot hygiene: verify with `tar -tzf <f> | grep system/packages.xml >/dev/null`
+(plain grep, NEVER `grep -q` — closes the pipe, tar SIGPIPE trips pipefail; bing.sh
+snapshot has the correct form) and size > 100 MB (`docs/re-droid-gotchas.md` #2).
+NEVER `chown` a volume (#1). Extract variants via docker too — the directory is
+root-owned, bare `mkdir` as your user fails.

@@ -30,6 +30,17 @@ switch ($Cmd) {
   save {
     if (-not $Name) { Write-Host "usage: factory.ps1 save <profile-name>"; exit 2 }
     Ensure-Tunnel 15556 5556
+    # Mandatory pre-snapshot UI check: MSA login often never registers in Android's
+    # account manager — `dumpsys account` says 0 even when signed in. The driver's
+    # rewards probe IS the login test: logged-out => state=wall. Never snapshot a dud.
+    & $Adb connect 127.0.0.1:15556 | Out-Null
+    $out = python src/bing_mobile_flow.py --serial 127.0.0.1:15556 --profile $Name --only rewards --iters 0 --no-debug 2>&1 | Out-String
+    if ($LASTEXITCODE -ne 0 -or $out -match '"state": "wall"') {
+      Write-Host "ABORT: factory volume not signed in (rc=$LASTEXITCODE, output tail):"
+      Write-Host ($out.Split("`n")[-4..-1] -join "`n")
+      exit 2
+    }
+    Write-Host "login confirmed at UI level; snapshotting."
     # freeze order force-stop -> sync -> stop -> tar -> start lives in bing.sh snapshot
     ssh $Server "cd ~/rewards-farmer-main && ./bing.sh snapshot $Name"
     New-Item -ItemType Directory -Force profile-snapshots | Out-Null
