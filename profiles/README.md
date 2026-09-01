@@ -14,7 +14,7 @@ ssh piotr.wrotny@10.17.103.115 'p=<name>; mkdir -p ~/redroid-variants/$p && dock
 | name | kind | account | snapshot | status |
 |------|------|---------|----------|--------|
 | test | anonymous | — | `test.tar.gz` | rebuilt 2026-09-01 from factory baseline (`pm clear` + `cp -a`); `bing.sh clear` allowed |
-| prod_2 | signed-in | 616piotrek@gmail.com | `prod_2.tar.gz` | VERIFIED working 2026-09-01 (home/rewards/tab-switch, `docs/bing-mobile-flow.md` § WORKING STATE) |
+| prod_2 | signed-in | 616piotrek@gmail.com | `prod_2.tar.gz` | READ-TO-EARN e2e VERIFIED 2026-09-01: 30/30 daily pts, 2 sessions (`docs/bing-mobile-flow.md` § Read-to-earn e2e) |
 | prod_1 | signed-in | TBD | — | to be created via factory after prod_2 e2e port |
 
 Snapshot hygiene: verify every snapshot with `tar -tzf <f> | grep system/packages.xml`

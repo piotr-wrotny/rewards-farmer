@@ -65,6 +65,27 @@ Notes from the demo: each Rewards visit opens ANOTHER "Rewards" tab (duplicates 
 tab hygiene from the old emulator flow matters); tab selectors (`Tabs`, `Tab: <name>`,
 `Close tab: <name>`) are identical to `deploy/read_to_earn.py`.
 
+### Read-to-earn e2e (port of `deploy/read_to_earn.py`, verified 2026-09-01)
+
+`./bing.sh run read-to-earn --profile prod_2` — session model per
+`docs/superpowers/specs/2026-09-01-read-to-earn-port-spec.md` (5/session, 20 sessions,
+60 total, global seen-set, idle cap 8, `cleanup_tabs` terminal invariant).
+
+| Claim | Evidence |
+|---|---|
+| Points accrued 3 reads | RTE card content-desc `0 out of 30` (pre) → `9 out of 30` (post); `artifacts/prod_2/ui/05-rewards-state-rte.xml` runs 14:39/14:42 |
+| 3 distinct articles read | screenshots `07/08/09-session1-article-*.png`, pairwise pixel-diff 0.352/0.469 (different pages, not stale frames) |
+| Full daily cap | second run: `articles_read=10, sessions=2, rc=0` (5+5 split proves session loop); card → `done`: `Read to earn, 30 points earned`, fresh probe `state=done rc=0` |
+| Tab hygiene | `[ACTION] tap [close-tab Rewards]`, `cleanup: closed 1 tabs`, zero-tabs invariant |
+
+ReDroid-specific calibration (deviations from 1:1, documented in driver docstrings):
+feed cards have source (`Daily Mail`) and age (`15h ago`) as SEPARATE nodes —
+`feed_visible`/`candidate_articles` anchor on `AGE_LINE` (digit + ago/temu) with the
+age measured from the title TOP (−40 px margin, nodes overlap); each title appears
+twice, keep the tallest (short duplicate centers on the Like/Share row). Home gates
+require `sa_profile_button` — the MSN feed view shares `MainSapphireActivity` +
+search box but has no profile button (caused one rc=2).
+
 ## Test path vs production path
 
 | | Test path (`test`) | Production path (`prod_N`) |
