@@ -36,7 +36,11 @@ echo binder_linux | sudo tee /etc/modules-load.d/binder.conf
 
 # 2. ReDroid
 docker run -d --name redroid --privileged -p 127.0.0.1:5555:5555 \
-  -v ~/redroid-data:/data redroid/redroid:14.0.0-latest androidboot.redroid_gpu_mode=guest
+  -v ~/redroid-data:/data redroid/redroid:14.0.0-latest \
+  androidboot.redroid_gpu_mode=guest \
+  androidboot.redroid_net_ndns=2 \
+  androidboot.redroid_net_dns1=172.20.0.41 \
+  androidboot.redroid_net_dns2=172.20.0.42
 
 # 3. ADB przez tunel SSH (z maszyny developerskiej)
 ssh -N -L 15555:127.0.0.1:5555 user@host &
@@ -88,4 +92,6 @@ Współrzędne ekranu (720x1280 w tym PoC) mogą się różnić od emulatora —
 - screenshoty ✓
 - persistence (restart kontenera nie traci stanu apki) ✓
 
-**Ograniczenie:** DNS w kontenerze nie działa — webview pokazuje "Webpage not available / ERR_NAME_NOT_RESOLVED". Przepływy polegające na faktycznym ładowaniu treści web w Bing wymagają naprawy DNS (patrz `docs/runtime-info.md` § Naprawa DNS).
+**Rozwiązane (2026-09-01):** DNS przez `androidboot.redroid_net_ndns=2` + `dns1/dns2`
+(same dns1/dns2 bez `ndns` netd ignoruje). Kontener z siecią: SERP ładuje się w webview.
+Szczegóły: `docs/runtime-info.md` § Naprawa DNS.
