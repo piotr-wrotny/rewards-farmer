@@ -65,7 +65,10 @@ PERMISSION_ALLOW_IDS = (
 )
 
 VIDEO_BADGE = re.compile(r"^\d+:\d\d$")
-SOURCE_LINE = re.compile(r"^.+\s·\s.+$")
+SOURCE_LINE = re.compile(r"^.+\s·\s.+$")  # old emulator: 'Source · time' in ONE node
+# ReDroid 34.0 feed splits them: 'Daily Mail' and '15h ago' are separate nodes
+# (prod_2 dump 2026-09-01) — relative age is the reliable card signature.
+AGE_LINE = re.compile(r"^(?=.*\d).{1,12}\b(ago|temu)$", re.IGNORECASE)
 SKIP_WORDS = ("Oferta", "Koszula", "Regatta", "Search", "Rewards", "Image Creator", "Trending")
 RTE_ACTIVE = re.compile(
     r'content-desc="Read to earn, , \d+ out of \d+ points earned"'
@@ -254,10 +257,19 @@ class BingMobileFlow:
         for _ in range(4):
             self.accept_permissions()
             self.dismiss_popups()
-            if self.d(resourceId=SEARCH_BOX).exists and ACT_HOME in self.focus():
+            if self.d(resourceId=SEARCH_BOX).exists and self.d(resourceId=PROFILE_BUTTON).exists \
+                    and ACT_HOME in self.focus():
                 return True
             if ACT_CAMERA in self.focus() or "permissioncontroller" in self.focus():
                 self.recover_camera()
+                continue
+            if self.d(resourceId=SEARCH_BOX).exists:
+                # search box but no profile button = MSN feed view over home (same
+                # activity); back pops it (prod_2 dump 2026-09-01: feed header lacks
+                # sa_profile_button).
+                action("recover", "back out of feed view")
+                self.press("back", "feed-to-home")
+                time.sleep(3)
                 continue
             action("recover", "relaunch to home")
             self.d.app_start(PKG, LAUNCH_ACTIVITY)
@@ -304,7 +316,7 @@ class BingMobileFlow:
             return "done", None
         if SIGNIN_WALL.search(xml):
             return "wall", None
-        for _ in range(6):
+        for _ in range(10):  # old-flow find_read_to_earn: 10 dump+scroll rounds
             self.scroll_feed()
             time.sleep(2)
             xml = self.d.dump_hierarchy()
@@ -318,6 +330,12 @@ class BingMobileFlow:
 
     # ------------------------------------------------------------- article loop
     def candidate_articles(self):
+        """Old-flow heuristics (:173-202) calibrated to ReDroid 34.0 dump (prod_2
+        2026-09-01): source and age are SEPARATE nodes ('Daily Mail' / '15h ago') and
+        the age line overlaps the title box (its top can be ABOVE the title bottom,
+        measured -10..+120 vs title top) — anchor on title TOP with a -40 margin;
+        every title appears twice (keep the tallest — the short duplicate's center
+        lands on the Like/Share row)."""
         xml = self.d.dump_hierarchy()
         nodes = []
         for m in re.finditer(
@@ -336,14 +354,21 @@ class BingMobileFlow:
             for s, x1, y1, x2, y2 in descs
             if ". Ad," in s or s.startswith("Ad, ")
         ]
-        titles = [n for n in nodes if len(n[4]) > 25]
-        sources = [n for n in nodes if SOURCE_LINE.match(n[4])]
+        best = {}  # title -> tallest node (old flow had single-height cards)
+        for n in nodes:
+            if len(n[4]) > 25 and (n[4] not in best or (n[1] - n[0]) > (best[n[4]][1] - best[n[4]][0])):
+                best[n[4]] = n
+        titles = list(best.values())
+        ages = [n for n in nodes if AGE_LINE.match(n[4])]
+        sources = [n for n in nodes if SOURCE_LINE.match(n[4])]  # old single-node layout
         durs = [n for n in nodes if VIDEO_BADGE.match(n[4]) and n[0] > 100]
         out = []
         for t in titles:
             if any(k in t[4] for k in SKIP_WORDS):
                 continue
-            if not any(0 < s[0] - t[1] < 260 for s in sources):
+            has_source = (any(-40 < a[0] - t[0] < 200 for a in ages)         # ReDroid
+                          or any(0 < s[0] - t[1] < 260 for s in sources))    # old layout
+            if not has_source:
                 continue
             if any(0 < t[0] - v[1] < 400 for v in durs):
                 continue  # video card
@@ -353,10 +378,19 @@ class BingMobileFlow:
             out.append((t[4], (t[2] + t[3]) // 2, cy))
         return out
 
+    def feed_visible(self):
+        """Feed confirmation. Old flow: one text node 'Source · time'. ReDroid dump
+        (prod_2 2026-09-01) splits source and relative-time into separate nodes, so
+        also accept a standalone relative-time like '15h ago' / '15 godz. temu'."""
+        texts = [m.group(1) for m in
+                 re.finditer(r'text="([^"]*)"', self.d.dump_hierarchy())]
+        return any(SOURCE_LINE.match(t) or AGE_LINE.match(t) for t in texts)
+
     def read_article(self, dwell):
         end = time.time() + dwell
         while time.time() < end:
-            self.swipe(0.75, 0.75, 0.75, random.uniform(0.45, 0.55), "article-read", 0.2)
+            # old-flow swipe, proportionally converted (old x=540 was SCREEN CENTER of 1080)
+            self.swipe(0.5, 0.625, 0.5, random.uniform(0.437, 0.521), "article-read", 0.2)
             time.sleep(random.uniform(1.2, 2.0))
 
     def article_loop(self, iterations):
@@ -380,6 +414,76 @@ class BingMobileFlow:
             done += 1
             log(f"[{done}/{iterations}] read: {title[:60]}")
         return done
+    # ------------------------------------------------------------- tab hygiene
+    # Verbatim port of deploy/read_to_earn.py :48-108 (spec:
+    # docs/superpowers/specs/2026-09-01-read-to-earn-port-spec.md §3).
+    def open_tabs_manager(self):
+        for _ in range(3):
+            if self.d(description="Tabs").exists:
+                action("tap", "tabs-button")
+                self.d(description="Tabs").click()
+                time.sleep(2.5)
+                self.act_shot("tabs-manager")
+                return True
+            self.press("back", "find-tabs-button")
+            time.sleep(2)
+        return False
+
+    def close_tabs(self, keep_feed, max_rounds=40):
+        """Close tab-manager entries; keep_feed keeps tabs named 'Rewards…'."""
+        closed = 0
+        for _ in range(max_rounds):
+            xml = self.d.dump_hierarchy()
+            target = None
+            for m in re.finditer(
+                r'content-desc="Close tab: ([^"]*)"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', xml
+            ):
+                name = m.group(1)
+                if keep_feed is not None and name.startswith("Rewards"):
+                    continue
+                x1, y1, x2, y2 = map(int, m.groups()[1:])
+                target = ((x1 + x2) // 2, (y1 + y2) // 2)
+                action("tap", f"close-tab {name[:40]}")
+                break
+            if target is None:
+                break
+            self.d.click(*target)
+            closed += 1
+            self.act_shot(f"tab-closed-{closed}")
+            time.sleep(1.5)
+        return closed
+
+    def switch_to_feed_tab(self):
+        xml = self.d.dump_hierarchy()
+        m = re.search(r'content-desc="Tab: Rewards"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', xml)
+        if not m:
+            return False
+        x1, y1, x2, y2 = map(int, m.groups())
+        self.tap(((x1 + x2) // 2, (y1 + y2) // 2), "switch-feed-tab")
+        time.sleep(5)
+        return True
+
+    def close_article_tab_return_to_feed(self):
+        """Mature post-article path (defined in old flow; runtime used back-press)."""
+        if not self.open_tabs_manager():
+            return False
+        self.close_tabs(keep_feed=True)
+        if not self.switch_to_feed_tab():
+            self.press("back", "leave-tab-manager")
+            time.sleep(2)
+            return False
+        return True
+
+    def cleanup_tabs(self):
+        """End-of-run invariant (old flow): all browser tabs closed."""
+        if not self.open_tabs_manager():
+            log("tab manager unavailable — nothing to clean")
+            return 0
+        n = self.close_tabs(keep_feed=None)
+        self.press("back", "leave-tab-manager")
+        time.sleep(2)
+        log(f"cleanup: closed {n} tabs")
+        return n
 
     # ------------------------------------------------------------- orchestration
     def to_home(self):
@@ -395,11 +499,14 @@ class BingMobileFlow:
         while time.time() < end:
             self.accept_permissions()
             self.dismiss_popups()
-            if ACT_HOME in self.focus() and self.d(resourceId=SEARCH_BOX).exists:
+            if ACT_HOME in self.focus() and self.d(resourceId=SEARCH_BOX).exists \
+                    and self.d(resourceId=PROFILE_BUTTON).exists:
                 self.shot("home-ready")
                 return
             if ACT_CAMERA in self.focus():
                 self.recover_camera()
+            elif self.d(resourceId=SEARCH_BOX).exists:
+                self.press("back", "feed-to-home")  # MSN feed view, not home
             time.sleep(1)
         self.shot("home-timeout")
         raise RuntimeError(f"never reached home ({ACT_HOME}); focus={self.focus()}")
@@ -408,8 +515,72 @@ class BingMobileFlow:
         name = self.shot("screenshot")  # shot() returns the file stem
         return {"state": "home", "articles_read": 0, "screenshot": name}
 
+    def walk_rewards_path(self):
+        """One session = one successful Read-to-earn click (old flow :155-167).
+        Returns (state, opened); opened False is terminal: done/wall/unknown/no-feed."""
+        if not self.open_rewards():
+            self.shot("rewards-page-unexpected")
+            log(f"WARNING: rewards page focus={self.activity()} (continuing anyway)")
+        state, card = self.rewards_state()
+        self.shot(f"rewards-state-{state}")
+        log(f"rewards state: {state}")
+        if state != "rte":
+            return state, False
+        self.tap(card, "read-to-earn-card")
+        time.sleep(8)
+        self.shot("read-to-earn-feed")
+        if not self.feed_visible():
+            log("click on Read to earn did not open the feed — terminal")
+            return "feed-not-opened", False
+        return state, True
+
+    def read_to_earn_flow(self, max_total=60, max_per_session=5, max_sessions=20):
+        """Session model, 1:1 with old run() (:222-279): 5 articles/session, one
+        RTE click = one session, seen-set global, idle cap 8, cleanup all tabs at end."""
+        seen = set()
+        total = sessions = 0
+        state = "start"
+        try:
+            while total < max_total and sessions < max_sessions:
+                state, opened = self.walk_rewards_path()
+                if not opened:
+                    if state == "wall":
+                        log("LOGGED-OUT SIGN-IN WALL — Read-to-earn requires an account. "
+                            "Stopping at wall with evidence.")
+                    elif state == "done":
+                        log("Read to earn already complete for today (terminal state).")
+                    else:
+                        log(f"Read to earn exhausted or unavailable ({state}) — terminal")
+                    break
+                sessions += 1
+                read_in_session = idle_scrolls = 0
+                while read_in_session < max_per_session and total < max_total:
+                    cands = [c for c in self.candidate_articles() if c[0] not in seen]
+                    if not cands:
+                        idle_scrolls += 1
+                        if idle_scrolls > 8:
+                            log("no fresh articles left in this feed")
+                            break
+                        self.scroll_feed()
+                        time.sleep(2)
+                        continue
+                    idle_scrolls = 0
+                    title, cx, cy = random.choice(cands[:3])
+                    seen.add(title)
+                    self.tap((cx, cy), "article-card")
+                    time.sleep(random.uniform(5, 7))
+                    self.shot(f"session{sessions}-article-{total + 1}")
+                    self.read_article(random.uniform(5, 10))
+                    self.press("back", "leave-article")
+                    time.sleep(random.uniform(3, 4.5))
+                    read_in_session += 1
+                    total += 1
+                    log(f"[{total}] session {sessions} ({read_in_session}/{max_per_session}): {title[:55]}")
+        finally:
+            self.cleanup_tabs()
+        return {"state": state, "articles_read": total, "sessions": sessions}
+
     def rewards_tail(self, iterations):
-        """Rewards page -> Read to earn -> article loop (terminal: wall/done)."""
         if not self.open_rewards():
             self.shot("rewards-page-unexpected")
             log(f"WARNING: rewards page focus={self.activity()} (continuing anyway)")
@@ -441,8 +612,11 @@ class BingMobileFlow:
             if not self.ensure_home():
                 raise RuntimeError("home not reachable after search")
             return {"state": "searched", "articles_read": 0, "serp": serp}
-        # 'rewards'/'read-to-earn' go straight to the Rewards page; 'full' searches
-        # first (the original proven sequence).
+        # 'read-to-earn' = full session model (iterations = max_total articles);
+        # 'rewards'/'full' keep the flat evidence loop. 'full' searches first
+        # (the original proven sequence).
+        if only == "read-to-earn":
+            return self.read_to_earn_flow(max_total=iterations)
         if only == "full":
             serp = self.search_and_results()
             log(f"search results BrowserActivity opened: {serp}")
