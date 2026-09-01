@@ -53,3 +53,34 @@ Automation resolves image in this order:
 
 - Daily flow: `logs/web-run-YYYYMMDD-HHMMSS.log`
 - Task flow: `logs/web-run-<task>-YYYYMMDD-HHMMSS.log`
+
+## Mobile flow (ReDroid on this server, no emulator)
+
+Bing app (`com.microsoft.bing`) runs in the `redroid` Docker container (Android 14 x86_64,
+port 127.0.0.1:5555, data volume `~/redroid-data`). It must be started with DNS props or
+web content fails with `ERR_NAME_NOT_RESOLVED`:
+
+```bash
+docker run --detach --name redroid --privileged \
+  --publish 127.0.0.1:5555:5555 \
+  --volume ~/redroid-data:/data \
+  redroid/redroid:14.0.0-latest \
+  androidboot.redroid_gpu_mode=guest \
+  androidboot.redroid_net_ndns=2 \
+  androidboot.redroid_net_dns1=172.20.0.41 \
+  androidboot.redroid_net_dns2=172.20.0.42
+```
+
+`androidboot.redroid_net_ndns` is REQUIRED — bare `redroid_net_dns1/2` props are ignored by netd.
+
+Dev runs from the Windows machine (tunnel first):
+
+```bash
+ssh -N -L 15555:127.0.0.1:5555 piotr.wrotny@10.17.103.115
+python src/bing_mobile_flow.py --debug [--iters N] [--clear]
+```
+
+- Every step produces a screenshot in `artifacts/screenshots/` (+ UI dumps in `artifacts/ui/`); `--debug` adds one per executed action.
+- `--clear` wipes Bing app data (`pm clear`) so FRE/onboarding reappear — dev/testing only; Prod keeps the app signed in.
+- Permission dialogs are auto-allowed in dev mode.
+- Logged-out terminal state: Rewards page shows the 'Join Microsoft Rewards' sign-in wall; Read-to-earn requires an account (Prod path).

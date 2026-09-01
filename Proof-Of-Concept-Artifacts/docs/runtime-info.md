@@ -56,20 +56,25 @@ adb -s 127.0.0.1:15555 shell "setprop persist.sys.locale en-US; setprop ctl.rest
 | Instalacja | `adb install -r <apk>` — Success |
 | Launcher | `com.microsoft.sapphire.app.main.SapphireMainActivity` |
 
-## Sieć — ZNANE OGRANICZENIE
+## Sieć — DNS NAPRAWIONY (2026-09-01)
 
 - Host: HTTP egress OK (`curl https://www.bing.com` → 200), ICMP blokowane przez sieć firmową.
-- Kontener ReDroid: **brak DNS** — `net.dns1`/`net.dns2` puste, webview → `ERR_NAME_NOT_RESOLVED`.
-- Root cause: Docker bridge nie propaguje DNS hosta (172.20.0.41/42) do Androida.
+- Root cause braku DNS: Docker bridge nie propaguje resolvera hosta (systemd-resolved
+  `127.0.0.53`) do Androida, a same propsy `redroid_net_dns1/2` są ignorowane przez netd.
 
-### Naprawa DNS (do wykonania przy odtworzeniu)
+### Naprawa DNS (ZWERYFIKOWANA)
 
-Opcja A — props przy starcie kontenera:
+Klucz: `androidboot.redroid_net_ndns` jest WYMAGANE — bez liczby serwerów netd nie
+przyjmuje dns1/dns2:
+
 ```
 docker run ... redroid/redroid:14.0.0-latest \
   androidboot.redroid_gpu_mode=guest \
+  androidboot.redroid_net_ndns=2 \
   androidboot.redroid_net_dns1=172.20.0.41 \
   androidboot.redroid_net_dns2=172.20.0.42
 ```
-Opcja B — przez `adb shell setprop net.dns1 172.20.0.41` (wymaga restartu netd).
-**Niezweryfikowane** — zaznaczone jako follow-up.
+
+Evidence: w kontenerze `ping www.bing.com` rozwiązuje nazwę (akamaiedge), SERP ładuje
+się w webview (wyniki Wikipedia). Wartości DNS wziąć z `resolvectl dns` na hoście
+(tutaj 172.20.0.41/42).
