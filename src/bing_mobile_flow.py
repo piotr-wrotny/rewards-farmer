@@ -1,4 +1,10 @@
-"""Bing mobile flow on server-side ReDroid (com.microsoft.bing), logged-out dev mode.
+"""Bing mobile TEST flow on server-side ReDroid (com.microsoft.bing) — logged-out dev mode.
+
+TEST flow only: runs WITHOUT a Microsoft account after `pm clear`, so first-run noise
+(FRE, permission prompts, region popup) is traversed every run and auto-handled. The
+PRODUCTION flow runs signed-in on the owner's credentials: that noise never appears and
+the handlers below are a safety net, not flow steps. Full step map + test/prod split:
+docs/bing-mobile-flow.md.
 
 Path (per Proof-Of-Concept-Artifacts): launch -> FRE dismiss -> home ready-check ->
 search -> results (BrowserActivity) -> Rewards (profile menu) -> Read to earn attempt ->
@@ -42,7 +48,7 @@ ACT_HOME = "MainSapphireActivity"
 ACT_BROWSER = "BrowserActivity"
 ACT_CAMERA = "CameraActivity"
 ACT_REWARDS = "TemplateActivity"
-
+ACT_MARKET_POPUP = "ToModifyMarketPopupActivity"
 FRE_NO_BUTTON = "com.microsoft.bing:id/sapphire_fre_bing_no_button"
 SEARCH_BOX = "com.microsoft.bing:id/sa_search_box"
 PROFILE_BUTTON = "com.microsoft.bing:id/sa_profile_button"
@@ -217,10 +223,22 @@ class BingMobileFlow:
             time.sleep(1)
         return False
 
+    def dismiss_popups(self):
+        """Bing template popups (e.g. 'Country/region updated') block home after FRE."""
+        if ACT_MARKET_POPUP in self.focus():
+            ok = self.d(text="OK")
+            if ok.exists:
+                action("popup", "dismiss 'Country/region updated' with OK")
+                ok.click()
+                time.sleep(4)
+                return True
+        return False
+
     def ensure_home(self):
         for _ in range(4):
             self.accept_permissions()
-            if self.d(resourceId=SEARCH_BOX).exists:
+            self.dismiss_popups()
+            if self.d(resourceId=SEARCH_BOX).exists and ACT_HOME in self.focus():
                 return True
             if ACT_CAMERA in self.focus() or "permissioncontroller" in self.focus():
                 self.recover_camera()
@@ -359,6 +377,7 @@ class BingMobileFlow:
         home = False
         while time.time() < end:
             self.accept_permissions()
+            self.dismiss_popups()
             if ACT_HOME in self.focus() and self.d(resourceId=SEARCH_BOX).exists:
                 home = True
                 break
