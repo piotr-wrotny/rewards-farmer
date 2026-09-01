@@ -1,34 +1,40 @@
-"""Bing mobile TEST flow on server-side ReDroid (com.microsoft.bing) — logged-out dev mode.
+"""Bing mobile flow on server-side ReDroid (com.microsoft.bing), per profile variant.
 
-TEST flow only: runs WITHOUT a Microsoft account after `pm clear`, so first-run noise
-(FRE, permission prompts, region popup) is traversed every run and auto-handled. The
-PRODUCTION flow runs signed-in on the owner's credentials: that noise never appears and
-the handlers below are a safety net, not flow steps. Full step map + test/prod split:
-docs/bing-mobile-flow.md.
+Profile `test` runs WITHOUT a Microsoft account (pm clear allowed), so first-run noise
+(FRE, permission prompts, region popup) is traversed every run and auto-handled.
+`prod_N` profiles run signed-in on the owner's credentials: that noise never appears
+and the handlers below are a safety net, not flow steps. Full step map + test/prod
+split: docs/bing-mobile-flow.md.
 
 Path (per Proof-Of-Concept-Artifacts): launch -> FRE dismiss -> home ready-check ->
 search -> results (BrowserActivity) -> Rewards (profile menu) -> Read to earn attempt ->
 article loop -> evidence in artifacts/.
-Dev mode runs WITHOUT a Microsoft account. Every flow step is verified by a screenshot
-in artifacts/<mode>/screenshots/ (plus UI dumps in artifacts/<mode>/ui/). With --debug,
-EVERY executed action (tap/swipe/key/text/permission/launch/back) also produces a screenshot.
+Every run is keyed to a profile variant (test|prod_1|prod_2|...): evidence lands in
+artifacts/<profile>/screenshots|ui. With --debug, EVERY executed action
+(tap/swipe/key/text/permission/launch/back) also produces a screenshot
+(default: on for profile=test, off for prod).
 
-Terminal logged-out state: Rewards page shows the "Join Microsoft Rewards" wall
-("Access now" -> OneAuth sign-in -> needs network/account). The flow detects the wall,
-records evidence and stops cleanly instead of failing.
+Terminal logged-out state (profile=test): Rewards page shows the "Join Microsoft
+Rewards" wall ("Access now" -> OneAuth sign-in -> needs account). The flow detects
+the wall, records evidence and stops cleanly (exit 0) instead of failing.
 
-Usage (Windows dev machine, SSH tunnel to the server first):
+Usage (normally via ./bing.sh on the server; from the Windows dev machine open the
+SSH tunnel first):
     ssh -N -L 15555:127.0.0.1:5555 piotr.wrotny@10.17.103.115
-    python src/bing_mobile_flow.py [--iters N] [--debug] [--clear] [--serial S] [--server U@H]
+    python src/bing_mobile_flow.py [--profile P] [--only ACTION] [--iters N]
+                                   [--debug|--no-debug] [--clear] [--serial S] [--server U@H]
 
+    --only    full|search|rewards|read-to-earn|screenshot (default full)
     --clear   wipe Bing app data on the server (pm clear) so the next attempt starts
-              fresh: FRE, permission dialogs and onboarding reappear. Dev/test only —
-              on Prod the app stays signed in and data is never cleared here.
-    --debug   screenshot every single executed action (default: step milestones only)
+              fresh: FRE, permission dialogs and onboarding reappear. ONLY for
+              profile=test — prod profiles stay signed in and are never cleared.
+
+Exit codes: 0 ok (incl. terminal wall/done), 2 flow failure, 3 infra.
 
 Requires: pip install uiautomator2; adb on PATH or at bin/platform-tools/adb.exe.
 """
 import argparse
+import json
 import os
 import random
 import re
@@ -69,12 +75,16 @@ RTE_DONE_TEXT = re.compile(r'text="Read to earn, \d+ points earned"')
 SIGNIN_WALL = re.compile(r"Join Microsoft Rewards|Access now")
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ART_DIR = os.path.join(ROOT, "artifacts")  # artifacts/<mode>/{screenshots,ui} — dev vs prod
+ART_DIR = os.path.join(ROOT, "artifacts")  # artifacts/<profile>/{screenshots,ui}
 
 
-def mode_dirs(mode):
-    base = os.path.join(ART_DIR, mode)
+def profile_dirs(profile):
+    base = os.path.join(ART_DIR, profile)
     return os.path.join(base, "screenshots"), os.path.join(base, "ui")
+
+
+class InfraError(RuntimeError):
+    """Container/adb/driver infrastructure problem (exit 3)."""
 
 
 def log(msg):
@@ -87,13 +97,13 @@ def action(context, detail="", trigger="flow"):
 
 
 class BingMobileFlow:
-    def __init__(self, serial, debug=False, query="hello world", mode="dev"):
+    def __init__(self, serial, debug=False, query="hello world", profile="test"):
         self.serial = serial
         self.debug = debug
         self.query = query
-        self.mode = mode
+        self.profile = profile
         self.seq = 0
-        self.shot_dir, self.ui_dir = mode_dirs(mode)
+        self.shot_dir, self.ui_dir = profile_dirs(profile)
         os.makedirs(self.shot_dir, exist_ok=True)
         os.makedirs(self.ui_dir, exist_ok=True)
         self.d = u2.connect(serial)
@@ -372,38 +382,37 @@ class BingMobileFlow:
         return done
 
     # ------------------------------------------------------------- orchestration
-    def run(self, iterations):
-        log(f"connected mode={self.mode} serial={self.serial} screen={self.w}x{self.h} debug={self.debug}")
+    def to_home(self):
+        """Launch + settle at home with first-run noise handled. Every --only starts here."""
+        log(f"connected profile={self.profile} serial={self.serial} "
+            f"screen={self.w}x{self.h} debug={self.debug}")
         self.launch()
         self.shot("after-launch")
         if self.dismiss_fre():
             log("FRE dismissed")
         # home wait loop: permission dialogs can hold focus for a while after pm clear
         end = time.time() + 40
-        home = False
         while time.time() < end:
             self.accept_permissions()
             self.dismiss_popups()
             if ACT_HOME in self.focus() and self.d(resourceId=SEARCH_BOX).exists:
-                home = True
-                break
+                self.shot("home-ready")
+                return
             if ACT_CAMERA in self.focus():
                 self.recover_camera()
             time.sleep(1)
-        if not home:
-            self.shot("home-timeout")
-            raise RuntimeError(f"never reached home ({ACT_HOME}); focus={self.focus()}")
-        self.shot("home-ready")
+        self.shot("home-timeout")
+        raise RuntimeError(f"never reached home ({ACT_HOME}); focus={self.focus()}")
 
-        serp = self.search_and_results()
-        log(f"search results BrowserActivity opened: {serp}")
-        if not self.ensure_home():
-            raise RuntimeError("home not reachable after search")
+    def screenshot_step(self):
+        name = self.shot("screenshot")  # shot() returns the file stem
+        return {"state": "home", "articles_read": 0, "screenshot": name}
 
+    def rewards_tail(self, iterations):
+        """Rewards page -> Read to earn -> article loop (terminal: wall/done)."""
         if not self.open_rewards():
             self.shot("rewards-page-unexpected")
             log(f"WARNING: rewards page focus={self.activity()} (continuing anyway)")
-
         state, card = self.rewards_state()
         self.shot(f"rewards-state-{state}")
         log(f"rewards state: {state}")
@@ -417,12 +426,29 @@ class BingMobileFlow:
         if state != "rte":
             log("Read to earn card not found on Rewards page.")
             return {"state": state, "articles_read": 0}
-
         self.tap(card, "read-to-earn-card")
         time.sleep(8)
         self.shot("read-to-earn-feed")
-        read = self.article_loop(iterations)
-        return {"state": state, "articles_read": read}
+        return {"state": state, "articles_read": self.article_loop(iterations)}
+
+    def run_only(self, only, iterations):
+        self.to_home()
+        if only == "screenshot":
+            return self.screenshot_step()
+        if only == "search":
+            serp = self.search_and_results()
+            log(f"search results BrowserActivity opened: {serp}")
+            if not self.ensure_home():
+                raise RuntimeError("home not reachable after search")
+            return {"state": "searched", "articles_read": 0, "serp": serp}
+        # 'rewards'/'read-to-earn' go straight to the Rewards page; 'full' searches
+        # first (the original proven sequence).
+        if only == "full":
+            serp = self.search_and_results()
+            log(f"search results BrowserActivity opened: {serp}")
+            if not self.ensure_home():
+                raise RuntimeError("home not reachable after search")
+        return self.rewards_tail(iterations)
 
 
 def check_serial(serial):
@@ -434,38 +460,61 @@ def check_serial(serial):
         with socket.socket() as s:
             s.settimeout(2)
             if s.connect_ex(("127.0.0.1", port)) != 0:
-                sys.exit(
-                    f"ERROR: nothing listening on 127.0.0.1:{port}. Start the SSH tunnel first:\n"
-                    "  ssh -N -L 15555:127.0.0.1:5555 piotr.wrotny@10.17.103.115"
+                raise InfraError(
+                    f"nothing listening on 127.0.0.1:{port}. On the server the container "
+                    "must be running (./bing.sh use <profile>); from the dev machine open "
+                    "the SSH tunnel first: "
+                    "ssh -N -L 15555:127.0.0.1:5555 piotr.wrotny@10.17.103.115"
                 )
         subprocess.run([adb, "connect", serial], capture_output=True, text=True)
     out = subprocess.run([adb, "devices"], capture_output=True, text=True).stdout
     if serial not in out:
-        sys.exit(f"ERROR: {serial} not in adb devices:\n{out}")
+        raise InfraError(f"{serial} not in adb devices:\n{out}")
 
 
 def main():
-    p = argparse.ArgumentParser(description="Bing mobile flow on ReDroid (dev, logged-out)")
+    p = argparse.ArgumentParser(description="Bing mobile flow on ReDroid, per profile variant")
     p.add_argument("--serial", default="127.0.0.1:15555")
     p.add_argument("--server", default="piotr.wrotny@10.17.103.115", help="ssh target for --clear")
     p.add_argument("--iters", type=int, default=10, help="articles to read")
     p.add_argument("--query", default="hello world", help="search query for the search step")
-    p.add_argument("--debug", action="store_true", help="screenshot every executed action")
+    p.add_argument("--profile", default="test",
+                   help="profile variant (test|prod_1|prod_2|...); evidence -> artifacts/<profile>/")
+    p.add_argument("--only", default="full",
+                   choices=("full", "search", "rewards", "read-to-earn", "screenshot"))
+    p.add_argument("--debug", action=argparse.BooleanOptionalAction, default=None,
+                   help="screenshot every executed action (default: on for profile=test)")
     p.add_argument("--clear", action="store_true",
-                   help="dev-only: wipe Bing app data first (pm clear)")
-    p.add_argument("--mode", choices=("dev", "prod"), default="dev",
-                   help="evidence bucket under artifacts/<mode>/ (dev=test path, prod=signed-in)")
+                   help="wipe Bing app data first (pm clear; profile=test only)")
     a = p.parse_args()
+    debug = a.debug if a.debug is not None else a.profile == "test"
 
-    check_serial(a.serial)
-    flow = BingMobileFlow(a.serial, debug=a.debug, query=a.query, mode=a.mode)
-    if a.clear:
-        if a.mode == "prod":
-            p.error("--clear would log out the prod account — dev mode only")
-        flow.clear_app_data(a.server)
-    result = flow.run(a.iters)
-    log(f"DONE state={result['state']} articles_read={result['articles_read']}")
-    log(f"evidence: {mode_dirs(a.mode)[0]}")
+    if a.clear and a.profile != "test":
+        print("[FATAL] --clear only allowed for profile=test", file=sys.stderr)
+        sys.exit(3)
+    flow = None
+    try:
+        check_serial(a.serial)
+        if a.clear and a.profile != "test":
+            print("[FATAL] --clear only allowed for profile=test", file=sys.stderr)
+            sys.exit(3)
+        flow = BingMobileFlow(a.serial, debug=debug, query=a.query, profile=a.profile)
+        if a.clear:
+            flow.clear_app_data(a.server)
+        result = flow.run_only(a.only, a.iters)
+        log(f"DONE state={result['state']} articles_read={result['articles_read']}")
+        log(f"evidence: {profile_dirs(a.profile)[0]}")
+        print(json.dumps({"profile": a.profile, **result}, ensure_ascii=False))
+        sys.exit(0)
+    except InfraError as e:
+        print(f"[FATAL] infra: {e}", file=sys.stderr)
+        sys.exit(3)
+    except (u2.exceptions.DeviceError, u2.exceptions.RPCError,
+            subprocess.SubprocessError, RuntimeError) as e:
+        if flow is not None:
+            flow.shot("failed")
+        print(f"[FATAL] {type(e).__name__}: {e}", file=sys.stderr)
+        sys.exit(2)
 
 
 if __name__ == "__main__":

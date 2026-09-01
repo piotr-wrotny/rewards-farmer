@@ -14,15 +14,18 @@
 > reachable on the test path.
 
 Runtime: `com.microsoft.bing` 34.0.440821002 (global) on ReDroid 14 (x86_64, ARM
-translation), server `10.17.103.115`, container `redroid` (see AGENTS.md § Mobile flow
-for the DNS-required docker run). Driver: `src/bing_mobile_flow.py` (uiautomator2) from
-the Windows dev machine via SSH tunnel `15555 → 127.0.0.1:5555`. Screen 720x1280@320.
+translation), server `10.17.103.115`, container `redroid` mounted on the active profile
+volume (see AGENTS.md § Mobile flow; `./bing.sh use <profile>`). Driver:
+`src/bing_mobile_flow.py` (uiautomator2) — normally via `./bing.sh run … --profile P` on
+the server; from the Windows dev machine via SSH tunnel `15555 → 127.0.0.1:5555`.
+Screen 720x1280@320.
 
-Every step is verified by a screenshot in `artifacts/<mode>/screenshots/` (+ UI hierarchy
-dump in `artifacts/<mode>/ui/`). `--mode dev` (default) = test path evidence; `--mode prod`
-= evidence from signed-in runs; the two are never mixed. `--debug` adds a screenshot per
-executed action. `--clear` is refused in `prod` (it would log the account out). Actions
-are logged as `[ACTION] <context> [<detail>] trigger=<source>`.
+Every step is verified by a screenshot in `artifacts/<profile>/screenshots/` (+ UI
+hierarchy dump in `artifacts/<profile>/ui/`). Evidence is keyed by profile variant
+(`test` = logged-out path, `prod_N` = signed-in) and the buckets are never mixed.
+`--debug` adds a screenshot per executed action (default on for `test`). `--clear` is
+refused on prod profiles (it would log the account out). Actions are logged as
+`[ACTION] <context> [<detail>] trigger=<source>`.
 
 ## Step map (verified 2026-09-01, evidence: artifacts/dev/screenshots/NN-*)
 

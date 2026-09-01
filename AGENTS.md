@@ -57,32 +57,32 @@ Automation resolves image in this order:
 ## Mobile flow (ReDroid on this server, no emulator)
 
 Bing app (`com.microsoft.bing`) runs in the `redroid` Docker container (Android 14 x86_64,
-port 127.0.0.1:5555, data volume `~/redroid-data`). It must be started with DNS props or
-web content fails with `ERR_NAME_NOT_RESOLVED`:
+port 127.0.0.1:5555). Data lives in per-profile volumes `~/redroid-variants/<profile>/`
+(whole Android `/data`); snapshots in `~/profile-snapshots/<profile>.tar.gz`. The container
+is stateless — switching a profile recreates it on that volume (see `bing.sh use` below).
+It must run with DNS props or web content fails with `ERR_NAME_NOT_RESOLVED`
+(`androidboot.redroid_net_ndns` is REQUIRED — bare `redroid_net_dns1/2` are ignored by netd),
+publish ONLY 5555 (host adb server owns 5037), and boot is ready only when
+`dumpsys activity users` shows `state=RUNNING_UNLOCKED` (`sys.boot_completed` lies —
+see `docs/re-droid-gotchas.md` #1/#6).
+
+One entrypoint, interactive and cron alike (runs ON the server, `~/rewards-farmer-main`):
 
 ```bash
-docker run --detach --name redroid --privileged \
-  --publish 127.0.0.1:5555:5555 \
-  --volume ~/redroid-data:/data \
-  redroid/redroid:14.0.0-latest \
-  androidboot.redroid_gpu_mode=guest \
-  androidboot.redroid_net_ndns=2 \
-  androidboot.redroid_net_dns1=172.20.0.41 \
-  androidboot.redroid_net_dns2=172.20.0.42
+./bing.sh use <profile>                     # switch active variant (recreate container)
+./bing.sh current | status
+./bing.sh run full|search|rewards|read-to-earn|screenshot [--profile P] [--iters N] [--debug|--no-debug]
+./bing.sh clear [--profile test]            # pm clear — profile test ONLY
+./bing.sh snapshot <name>                   # freeze factory volume -> profile-snapshots/<name>.tar.gz
 ```
 
-`androidboot.redroid_net_ndns` is REQUIRED — bare `redroid_net_dns1/2` props are ignored by netd.
+Profiles are named credential variants (`profiles/README.md` is the registry): `test` =
+logged-out (pm clear allowed), `prod_N` = signed-in (never cleared). Driver-level usage
+(from the Windows dev machine, tunnel `ssh -N -L 15555:127.0.0.1:5555`, serial
+`127.0.0.1:15555`): `python src/bing_mobile_flow.py --profile P --only ACTION`.
 
-Two execution modes, evidence kept separately (`--mode dev|prod`):
-
-```bash
-ssh -N -L 15555:127.0.0.1:5555 piotr.wrotny@10.17.103.115
-python src/bing_mobile_flow.py --mode dev --debug [--iters N] [--clear]   # test path (logged-out)
-python src/bing_mobile_flow.py --mode prod --debug [--iters N]            # signed-in (no --clear!)
-```
-
-- Evidence: `artifacts/<mode>/screenshots/` (+ `artifacts/<mode>/ui/`); `--debug` adds a screenshot per executed action.
-- `--clear` wipes Bing app data (`pm clear`) so FRE/onboarding reappear — dev/testing only; refused in `prod` (would log the account out).
-- Permission dialogs are auto-allowed (dev path; prod keeps them only as a safety net).
-- Logged-out terminal state: Rewards page shows the 'Join Microsoft Rewards' sign-in wall; Read-to-earn requires the signed-in prod path.
-- Step-by-step selector map: `docs/bing-mobile-flow.md`.
+- Evidence: `artifacts/<profile>/screenshots/` (+ `ui/`); `--debug` adds a screenshot per executed action (default: on for `test`).
+- Exit codes: 0 ok (incl. terminal wall/done), 2 flow failure, 3 infra; `--clear` on a prod profile exits 3 (would log the account out).
+- Permission dialogs are auto-allowed (test path; prod keeps them only as a safety net).
+- Logged-out terminal state: Rewards page shows the 'Join Microsoft Rewards' sign-in wall; Read-to-earn requires a signed-in profile.
+- Step-by-step selector map: `docs/bing-mobile-flow.md`. Operational hazards: `docs/re-droid-gotchas.md`.
