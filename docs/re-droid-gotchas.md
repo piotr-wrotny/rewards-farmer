@@ -41,9 +41,12 @@ that (`state=RUNNING_UNLOCKED`, Bing signed-in intact).
 
 **Rules:**
 - Volume copy/move primitives: `cp -a` or tar (uid-preserving). NEVER `chown`, NEVER
-  rsync without `-a`, NEVER extract tars as a non-root user into variant dirs.
+  rsync without `-a`. Extraction as root preserves the original uids — verified: the
+  restored `misc/keystore` stayed uid 1017 with zero post-processing.
 - Host-side "wrong ownership" inside `/data` is EXPECTED and correct — Android is a
-  multi-uid OS; Docker mounts need only path access, not content ownership.
+  multi-uid OS; Docker mounts need path access, not content ownership.
+- Recovery from a broken volume: restore the snapshot tar (uid-perfect). A tar taken
+  AFTER a chown is poisoned — treat it as unusable.
 - `pm clear` (via adb, inside Android) is the only sanctioned data wipe for `test`.
 
 ## 2. A `tar` as root can silently SKIP content — verify archives, always
