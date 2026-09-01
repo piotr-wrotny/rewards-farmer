@@ -9,3 +9,5 @@ __pycache__/edge-profile/
 android-data/
 artifacts/
 logs/
+bin/
+
