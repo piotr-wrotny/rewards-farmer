@@ -1,0 +1,6 @@
+# Shell scripts run on the Linux server — never CRLF.
+*.sh text eol=lf
+bing.sh text eol=lf
+# Python: canonical LF in the repo (Windows checkouts may use core.autocrlf).
+*.py text eol=lf
+* text=auto
