@@ -13,10 +13,10 @@ logs/
 bin/
 assets/*.apk
 
-# profile vault — commit ONLY encrypted .enc artifacts + README, never plaintext
+# profile vault — registry README only; snapshots stay server-side + local (2026-09-01:
+# no encrypted blobs in git)
 profiles/*
 !profiles/README.md
-!profiles/*.enc
 *.tar
 *.tar.gz
 .venv/
