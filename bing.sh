@@ -14,7 +14,7 @@ VAR="${BING_VAR:-$HOME/redroid-variants}"
 SNAP="$HOME/profile-snapshots"
 ADB="${ADB:-adb}"
 LOGS="$ROOT/logs"; mkdir -p "$LOGS"
-CONT=redroid; PORT=5555
+CONT="${BING_CONT:-redroid}"; PORT="${BING_PORT:-5555}"
 
 serial() { echo "127.0.0.1:$1"; }
 die() { echo "$*" >&2; exit "${2:-2}"; }

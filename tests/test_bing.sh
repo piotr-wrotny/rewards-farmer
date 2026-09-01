@@ -9,6 +9,7 @@ chk() { if [ "$2" != "$3" ]; then echo "FAIL $1: got '$2' want '$3'"; fail=1; el
 export BING_VAR="$(mktemp -d)"   # empty variants registry
 export ADB="false"               # any adb call fails => infra paths, never a real device
 export BING_PY="false"
+export BING_CONT=no_such_container   # isolate from any real redroid container
 
 ./bing.sh >/dev/null 2>&1; chk usage $? 2
 ./bing.sh bogus >/dev/null 2>&1; chk bogus $? 2
