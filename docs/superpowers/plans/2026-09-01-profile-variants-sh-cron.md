@@ -31,7 +31,7 @@
 **Interfaces:**
 - Produces: `~/rewards-farmer-main/.venv/bin/python` with `uiautomator2` importable. Task 4 calls it `$PY`.
 
-- [ ] **Step 1: venv + install**
+- [x] **Step 1: venv + install**
 
 ```bash
 ssh piotr.wrotny@10.17.103.115 'cd ~/rewards-farmer-main && python3 -m venv .venv && .venv/bin/pip install -q uiautomator2'
@@ -39,7 +39,7 @@ ssh piotr.wrotny@10.17.103.115 'cd ~/rewards-farmer-main && python3 -m venv .ven
 
 `ensurepip` missing on distro python → `sudo apt-get install -y python3.14-venv`; last-resort fallback `python3.12 -m venv` (all later steps unchanged).
 
-- [ ] **Step 2: Prove it drives the live container**
+- [x] **Step 2: Prove it drives the live container**
 
 ```bash
 ssh piotr.wrotny@10.17.103.115 'cd ~/rewards-farmer-main && .venv/bin/python -c "import uiautomator2 as u2; d=u2.connect(\"127.0.0.1:5555\"); print(d.info[\"displayWidth\"], d.info[\"displayHeight\"])"'
@@ -47,9 +47,9 @@ ssh piotr.wrotny@10.17.103.115 'cd ~/rewards-farmer-main && .venv/bin/python -c 
 
 Expected: `720 1280`.
 
-- [ ] **Step 3: Branch sync on server.** `git -C ~/rewards-farmer-main remote -v && git -C ~/rewards-farmer-main pull`. If no remote for this branch exists: deploy via `git -C . archive bing-server-flow src | ssh piotr.wrotny@10.17.103.115 'tar -x -C ~/rewards-farmer-main'` and record the deploy method in `AGENTS.md` § Mobile flow.
+- [x] **Step 3: Branch sync on server.** `git -C ~/rewards-farmer-main remote -v && git -C ~/rewards-farmer-main pull`. If no remote for this branch exists: deploy via `git -C . archive bing-server-flow src | ssh piotr.wrotny@10.17.103.115 'tar -x -C ~/rewards-farmer-main'` and record the deploy method in `AGENTS.md` § Mobile flow.
 
-- [ ] **Step 4: Commit** `.gitignore` += `.venv/` → `chore: server venv ignored`.
+- [x] **Step 4: Commit** `.gitignore` += `.venv/` → `chore: server venv ignored`.
 
 ---
 
@@ -66,7 +66,7 @@ Expected: `720 1280`.
   - `--clear` with a non-`test` profile → exit 3, message
   - exits: 0 success incl. terminal `wall`/`done`; 2 flow failure; 3 infra (`InfraError`)
 
-- [ ] **Step 1: Evidence dirs per profile.** Replace `mode_dirs` block:
+- [x] **Step 1: Evidence dirs per profile.** Replace `mode_dirs` block:
 
 ```python
 ART_DIR = os.path.join(ROOT, "artifacts")  # artifacts/<profile>/{screenshots,ui}
@@ -78,7 +78,7 @@ def profile_dirs(profile):
 
 `__init__(self, serial, debug=False, query="hello world", profile="test")` — replace the `mode` param with `profile`; `self.profile = profile`; `self.shot_dir, self.ui_dir = profile_dirs(profile)`; drop `self.mode`; `run()` banner prints `profile=`. Note `clear_app_data(self, server)` keeps taking `server` as its argument (main passes `args.server`).
 
-- [ ] **Step 2: Split `run()` into `to_home()` + `run_only()`** (keep `full` behavior byte-identical to today):
+- [x] **Step 2: Split `run()` into `to_home()` + `run_only()`** (keep `full` behavior byte-identical to today):
 
 ```python
 def to_home(self):
@@ -140,7 +140,7 @@ def run_only(self, only, iterations):
     return self.rewards_tail(iterations)
 ```
 
-- [ ] **Step 3: `InfraError`, `main()` argparse cutover + exit-code mapping.** Add near the top of the file (after imports): `import json` (not imported today) and `class InfraError(RuntimeError): pass`. Change `check_serial()`'s two `sys.exit("ERROR: …")` calls to `raise InfraError(...)`. Replace everything from `p.add_argument("--debug"…)` to `main()`'s end:
+- [x] **Step 3: `InfraError`, `main()` argparse cutover + exit-code mapping.** Add near the top of the file (after imports): `import json` (not imported today) and `class InfraError(RuntimeError): pass`. Change `check_serial()`'s two `sys.exit("ERROR: …")` calls to `raise InfraError(...)`. Replace everything from `p.add_argument("--debug"…)` to `main()`'s end:
 
 ```python
 p.add_argument("--profile", default="test", help="profile variant (test|prod_1|prod_2|...)")
@@ -175,7 +175,7 @@ except (u2.exceptions.DeviceError, u2.exceptions.RPCError,
 
 Delete the old `--mode`/`--debug default True` args and the old `run()` body (keep `article_loop`, `candidate_articles`, `rewards_state`, `open_rewards`, `search_and_results`, dialog helpers untouched).
 
-- [ ] **Step 4: Guard test (cheap, no device):**
+- [x] **Step 4: Guard test (cheap, no device):**
 
 ```bash
 python src/bing_mobile_flow.py --serial none --profile prod_2 --clear; echo "rc=$?"
@@ -183,9 +183,9 @@ python src/bing_mobile_flow.py --serial none --profile prod_2 --clear; echo "rc=
 
 Expected: `rc=3` message `--clear only allowed for profile=test` (fails before any device I/O because the check precedes `BingMobileFlow()`).
 
-- [ ] **Step 5: Live smoke on `test`** (tunnel 15555 open; volume `test` = today's dev volume on 5555 — see Task 3 Step 1 for the one-time layout): `python src/bing_mobile_flow.py --serial 127.0.0.1:15555 --server piotr.wrotny@10.17.103.115 --profile test --only screenshot` → exit 0, `artifacts/test/screenshots/NN-screenshot.png` exists. Then `--only full` once; expect exit 0 and `state=wall` (fresh test) or `rte`+`articles_read`.
+- [x] **Step 5: Live smoke on `test`** (tunnel 15555 open; volume `test` = today's dev volume on 5555 — see Task 3 Step 1 for the one-time layout): `python src/bing_mobile_flow.py --serial 127.0.0.1:15555 --server piotr.wrotny@10.17.103.115 --profile test --only screenshot` → exit 0, `artifacts/test/screenshots/NN-screenshot.png` exists. Then `--only full` once; expect exit 0 and `state=wall` (fresh test) or `rte`+`articles_read`.
 
-- [ ] **Step 6: Docs + commit.** Update `AGENTS.md` § Mobile flow commands and `docs/bing-mobile-flow.md` artifact-path lines to `artifacts/<profile>/`. Commit: `feat: profile variants in mobile driver (--profile/--only, exit 0/2/3)`.
+- [x] **Step 6: Docs + commit.** Update `AGENTS.md` § Mobile flow commands and `docs/bing-mobile-flow.md` artifact-path lines to `artifacts/<profile>/`. Commit: `feat: profile variants in mobile driver (--profile/--only, exit 0/2/3)`.
 
 ---
 
@@ -197,7 +197,7 @@ Expected: `rc=3` message `--clear only allowed for profile=test` (fails before a
 **Interfaces:**
 - Produces: volume dirs Task 4 mounts; `test.tar.gz` snapshot Task 5 copies locally.
 
-- [ ] **Step 1: Freeze current anonymous volume as `test`.** prod_2 currently lives in `~/redroid-data`; the untouched anonymous copy is `~/redroid-data-dev-loggedout-20260901`:
+- [x] **Step 1: Freeze current anonymous volume as `test`.** prod_2 currently lives in `~/redroid-data`; the untouched anonymous copy is `~/redroid-data-dev-loggedout-20260901`:
 
 ```bash
 ssh piotr.wrotny@10.17.103.115 'set -e
@@ -211,9 +211,9 @@ docker run --rm --volume ~/redroid-variants/prod_2:/data --publish 127.0.0.1:555
 
 Note `docker stop -t 30 redroid` before `mv` — moving a live volume corrupts it. `rm -f redroid` is safe instead (container will be recreated by `bing.sh use`).
 
-- [ ] **Step 2: Layout verification** — `docker inspect -f '{{range .Mounts}}{{.Source}}{{end}}' redroid` prints `/home/piotr.wrotny/redroid-variants/prod_2`; `adb connect 127.0.0.1:5555 && adb -s 127.0.0.1:5555 shell getprop sys.boot_completed` = `1`.
+- [x] **Step 2: Layout verification** — `docker inspect -f '{{range .Mounts}}{{.Source}}{{end}}' redroid` prints `/home/piotr.wrotny/redroid-variants/prod_2`; `adb connect 127.0.0.1:5555 && adb -s 127.0.0.1:5555 shell getprop sys.boot_completed` = `1`.
 
-- [ ] **Step 3:** Server snapshots now: `prod_2.tar.gz` (re-pack canonical copy), `test.tar.gz`. Record paths in `AGENTS.md` § Mobile flow (layout paragraph). No git change (paths doc only).
+- [x] **Step 3:** Server snapshots now: `prod_2.tar.gz` (re-pack canonical copy), `test.tar.gz`. Record paths in `AGENTS.md` § Mobile flow (layout paragraph). No git change (paths doc only).
 
 ---
 
@@ -234,7 +234,7 @@ Note `docker stop -t 30 redroid` before `mv` — moving a live volume corrupts i
   - `./bing.sh snapshot <profile>` — freeze factory volume → `~/profile-snapshots/<profile>.tar.gz` (force-stop→sync→stop→tar→start)
 - Locking: `flock /tmp/bing-5555.lock` for run/use/clear (5556 for snapshot). Log: `logs/bing-<profile>-<action>-$(date +%Y%m%d-%H%M%S).log` (driver stdout+stderr via `tee`).
 
-- [ ] **Step 1: Write failing guard tests** `tests/test_bing.sh`:
+- [x] **Step 1: Write failing guard tests** `tests/test_bing.sh`:
 
 ```bash
 #!/usr/bin/env bash
@@ -253,9 +253,9 @@ MOCK_ADB_FAIL=1 ./bing.sh run screenshot --profile test >/dev/null 2>&1; rc=$?
 exit $fail
 ```
 
-- [ ] **Step 2: Run — expect all FAIL (file missing).** `bash tests/test_bing.sh`
+- [x] **Step 2: Run — expect all FAIL (file missing).** `bash tests/test_bing.sh`
 
-- [ ] **Step 3: Implement `bing.sh`:**
+- [x] **Step 3: Implement `bing.sh`:**
 
 ```bash
 #!/usr/bin/env bash
@@ -337,15 +337,15 @@ case "$cmd" in
 esac
 ```
 
-- [ ] **Step 4: Pass tests** (test 4 hits `die` before device; test 3 exercises `--only screenshot` path — MOCK hook: honor env `MOCK_ADB_FAIL=1` by `export ADB="sh -c 'exit 1' #"` in the test; if too fragile, drop to asserting nonzero rc only):
+- [x] **Step 4: Pass tests** (test 4 hits `die` before device; test 3 exercises `--only screenshot` path — MOCK hook: honor env `MOCK_ADB_FAIL=1` by `export ADB="sh -c 'exit 1' #"` in the test; if too fragile, drop to asserting nonzero rc only):
 
 ```bash
 bash tests/test_bing.sh   # all ok, exit 0
 ```
 
-- [ ] **Step 5: Deploy to server + self-heal smoke.** After pushing: `ssh piotr.wrotny@10.17.103.115 'cd ~/rewards-farmer-main && git pull && chmod +x bing.sh'`. Cold start test — container on prod_2, `./bing.sh use test && ./bing.sh current` (expect `active=test`, boot ~30 s); `./bing.sh run screenshot --profile test` → `rc=0`, new log, screenshot under `artifacts/test/`; `./bing.sh use prod_2` returns.
+- [x] **Step 5: Deploy to server + self-heal smoke.** After pushing: `ssh piotr.wrotny@10.17.103.115 'cd ~/rewards-farmer-main && git pull && chmod +x bing.sh'`. Cold start test — container on prod_2, `./bing.sh use test && ./bing.sh current` (expect `active=test`, boot ~30 s); `./bing.sh run screenshot --profile test` → `rc=0`, new log, screenshot under `artifacts/test/`; `./bing.sh use prod_2` returns.
 
-- [ ] **Step 6: Commit** `bing.sh`, `tests/test_bing.sh`, docs touch: `feat: bing.sh profile orchestration (use/run/clear/snapshot)`.
+- [x] **Step 6: Commit** `bing.sh`, `tests/test_bing.sh`, docs touch: `feat: bing.sh profile orchestration (use/run/clear/snapshot)`.
 
 ---
 
@@ -361,7 +361,7 @@ bash tests/test_bing.sh   # all ok, exit 0
 - Consumes: `bing.sh snapshot <name>` on server (Task 4).
 - Produces: `factory.ps1 login <name>` (tunnel + scrcpy), `factory.ps1 save <name>` (snapshot + pull + reset factory to test baseline).
 
-- [ ] **Step 1: `scripts/factory.ps1`:**
+- [x] **Step 1: `scripts/factory.ps1`:**
 
 ```powershell
 param([Parameter(Position=0)][string]$Cmd, [Parameter(Position=1)][string]$Name)
@@ -392,7 +392,7 @@ switch ($Cmd) {
 }
 ```
 
-- [ ] **Step 2: New variant from snapshot (server one-liner documented in AGENTS.md):**
+- [x] **Step 2: New variant from snapshot (server one-liner documented in AGENTS.md):**
 
 ```bash
 ssh piotr.wrotny@10.17.103.115 'p=prod_3; mkdir -p ~/redroid-variants/$p && docker run --rm -v /home/piotr.wrotny:/host busybox tar -C /host/redroid-variants/$p -xzf /host/profile-snapshots/$p.tar.gz && cd ~/rewards-farmer-main && ./bing.sh use $p'
@@ -400,9 +400,9 @@ ssh piotr.wrotny@10.17.103.115 'p=prod_3; mkdir -p ~/redroid-variants/$p && dock
 
 (`use` mounts it; `snapshot` never deletes prior snapshots — overwrite only same-name.)
 
-- [ ] **Step 3: `profiles/README.md` registry** — table: name / kind / account / snapshot server path / local copy / notes. Rows: `test`, `prod_2`. Rule line: snapshots are whole `/data` volumes; restore via Task-5-Step-2 one-liner. `.gitignore` additions if missing: `profile-snapshots/`.
+- [x] **Step 3: `profiles/README.md` registry** — table: name / kind / account / snapshot server path / local copy / notes. Rows: `test`, `prod_2`. Rule line: snapshots are whole `/data` volumes; restore via Task-5-Step-2 one-liner. `.gitignore` additions if missing: `profile-snapshots/`.
 
-- [ ] **Step 4: `AGENTS.md`**: replace mobile section commands with `bing.sh` + `factory.ps1` contract (one screen). Commit: `feat: factory.ps1, profile registry, local snapshot copies`.
+- [x] **Step 4: `AGENTS.md`**: replace mobile section commands with `bing.sh` + `factory.ps1` contract (one screen). Commit: `feat: factory.ps1, profile registry, local snapshot copies`.
 
 ---
 
@@ -416,7 +416,7 @@ ssh piotr.wrotny@10.17.103.115 'p=prod_3; mkdir -p ~/redroid-variants/$p && dock
 - Consumes: `bing.sh run <action> --profile P` contract.
 - Produces: exact crontab snippet; the server scheduler (existing process) stays the executor — we only add its job lines.
 
-- [ ] **Step 1:** Write `cron/README.md`:
+- [x] **Step 1:** Write `cron/README.md`:
 
 ```cron
 # /home/piotr.wrotny/rewards-farmer-main — bing mobile flows (server-local KRON)
@@ -426,14 +426,14 @@ ssh piotr.wrotny@10.17.103.115 'p=prod_3; mkdir -p ~/redroid-variants/$p && dock
 
 Stagger profiles so flock never queues; times are placeholders until prod flow is mapped — mark as such.
 
-- [ ] **Step 2:** User pastes into their existing scheduler UI/crontab (agent MUST NOT install crontab without user go). Commit `docs: cron snippet for bing.sh`.
+- [x] **Step 2:** User pastes into their existing scheduler UI/crontab (agent MUST NOT install crontab without user go). Commit `docs: cron snippet for bing.sh`.
 
 ---
 
 ### Task 7: End-to-end acceptance (the whole point)
 
-- [ ] **Step 1:** `./bing.sh current` → correct active profile; `use test` → `run full --profile test --no-debug` → exit 0, terminal state `wall` in JSON; `use prod_2` → `run screenshot --profile prod_2` → exit 0 (no dialogs on warm signed-in app).
-- [ ] **Step 2:** Round-trip UI proof: `run screenshot` artifacts — `artifacts/test/.../NN-screenshot.png` shows anonymous home; same file for `prod_2` shows signed-in home (pixel-diff > threshold; eyeball).
-- [ ] **Step 3:** Kill container mid-nothing: `docker rm -f redroid && ./bing.sh run screenshot --profile test` → self-heal (recreate+boot+run) exit 0.
-- [ ] **Step 4:** `./bing.sh clear --profile prod_2` → exit 3 (prod data intact: `run rewards --profile prod_2` afterwards still signed in).
-- [ ] **Step 5:** Commit `test: profile-variant acceptance checks` + close-out notes in `AGENTS.md`.
+- [x] **Step 1:** `./bing.sh current` → correct active profile; `use test` → `run full --profile test --no-debug` → exit 0, terminal state `wall` in JSON; `use prod_2` → `run screenshot --profile prod_2` → exit 0 (no dialogs on warm signed-in app).
+- [x] **Step 2:** Round-trip UI proof: `run screenshot` artifacts — `artifacts/test/.../NN-screenshot.png` shows anonymous home; same file for `prod_2` shows signed-in home (pixel-diff > threshold; eyeball).
+- [x] **Step 3:** Kill container mid-nothing: `docker rm -f redroid && ./bing.sh run screenshot --profile test` → self-heal (recreate+boot+run) exit 0.
+- [x] **Step 4:** `./bing.sh clear --profile prod_2` → exit 3 (prod data intact: `run rewards --profile prod_2` afterwards still signed in).
+- [x] **Step 5:** Commit `test: profile-variant acceptance checks` + close-out notes in `AGENTS.md`.
