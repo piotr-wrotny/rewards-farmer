@@ -3,19 +3,25 @@
 KRON runs ON the server (`10.17.103.115`, existing scheduler process). Job lines call
 the same entrypoint humans use — no separate path.
 
-ACTUALLY INSTALLED (server crontab, 2026-09-09; backup `~/crontab.backup-20260909-*`;
-previous backup `~/crontab.backup-20260901`):
+ACTUALLY INSTALLED (server crontab, 2026-09-09 evening; every change backs up first
+to `~/crontab.backup-<ts>`):
 
 ```cron
 30 1 * * * /home/piotr.wrotny/rewards-farmer-main/run_daily.sh >/dev/null 2>&1
-0 2 * * * /home/piotr.wrotny/rewards-farmer-main/bing.sh run read-to-earn --profile prod_1 --iters 60 >> /home/piotr.wrotny/rewards-farmer-main/logs/cron.log 2>&1
-0 3 * * * /home/piotr.wrotny/rewards-farmer-main/bing.sh run read-to-earn --profile domena1-prod --iters 60 >> /home/piotr.wrotny/rewards-farmer-main/logs/cron.log 2>&1
-30 4 * * * /home/piotr.wrotny/rewards-farmer-main/run_daily.sh domena1-prod >> /home/piotr.wrotny/rewards-farmer-main/logs/cron.log 2>&1
+45 1 * * * /home/piotr.wrotny/rewards-farmer-main/bing.sh run read-to-earn --profile prod_1 --iters 60 >> /home/piotr.wrotny/rewards-farmer-main/logs/cron.log 2>&1
+0 2 * * * /home/piotr.wrotny/rewards-farmer-main/bing.sh run read-to-earn --profile domena1-prod --iters 60 >> /home/piotr.wrotny/rewards-farmer-main/logs/cron.log 2>&1
+0 2 * * * /home/piotr.wrotny/rewards-farmer-main/run_daily.sh domena1-prod >> /home/piotr.wrotny/rewards-farmer-main/logs/cron.log 2>&1
 ```
 
-web `default` (01:30) → web domena1-prod (04:30): never overlap (the flow kills all
-image containers first). mobile prod_1 (02:00) → domena1-prod (03:00): 1 h stagger
-around the flock.
+Schedule shape: `prod_1` = web 01:30 + mobile 01:45; `domena1-prod` = web + mobile
+both 02:00. Interactions that are SAFE BY DESIGN: the two mobile 02:00-bound runs
+serialise on flock `/tmp/bing-5555.lock` (prod_1 at 01:45 with 60 articles runs
+≈ 35 min, so domena1-prod may start ≈ 02:20 — the flock queues, never corrupts).
+RISK to keep an eye on: web `default` (01:30, hard timeout 30 min) and web
+domena1-prod (02:00) share one image and `run_daily.sh` KILLS all image containers
+before starting — a default run still alive at 02:00 gets terminated mid-flight.
+Default runs finish ≈ 15 min in practice; if it ever overruns, move the domena1-prod
+web line later.
 
 Proposed, NOT installed: a `prod_2` read-to-earn line (stagger so flock
 `/tmp/bing-5555.lock` never queues two runs; measured ≈ 6 min for 10 articles):

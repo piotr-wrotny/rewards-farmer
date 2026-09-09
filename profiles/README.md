@@ -20,7 +20,7 @@ ssh piotr.wrotny@10.17.103.115 'p=<name>; docker run --rm -v /home/piotr.wrotny:
 | test | anonymous | — | `test.tar.gz` | rebuilt 2026-09-01 from factory baseline (`pm clear` + `cp -a`); `bing.sh clear` allowed |
 | prod_2 | signed-in | 616piotrek@gmail.com | `prod_2.tar.gz` | READ-TO-EARN e2e VERIFIED 2026-09-01: 30/30 daily pts, 2 sessions (`docs/bing-mobile-flow.md` § Read-to-earn e2e) |
 | prod_1 | signed-in | piotrwro01@gmail.com | `prod_1.tar.gz` | VERIFIED signed-in 2026-09-01 (factory login → snapshot → variant); RTE `30 points earned` |
-| domena1-prod | signed-in | <uzupełnić e-mail> | `domena1-prod.tar.gz` | PROVISIONED 2026-09-09 (`docs/profile-login-procedure.md`): mobile VERIFIED on variant (`rewards` probe → `state=rte` rc 0); web VERIFIED `login_check` → `state=signed_in`; cron installed (mobile 03:00 RTE, web 04:30 daily) |
+| domena1-prod | signed-in | <uzupełnić e-mail> | `domena1-prod.tar.gz` | PROVISIONED 2026-09-09 (`docs/profile-login-procedure.md`): mobile VERIFIED on variant (`rewards` probe → `state=rte` rc 0; RTE test run reading articles 2026-09-09); web VERIFIED `login_check` → `state=signed_in`; cron: web + mobile both 02:00 |
 
 **Web** (Edge): a user-data-dir volume — `default` is the historical
 `~/rewards-farmer-main/edge-profile`; named profiles live at
