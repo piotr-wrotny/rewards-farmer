@@ -87,3 +87,38 @@ adb -s 127.0.0.1:5555 shell dumpsys activity users | grep -q "state=RUNNING_UNLO
 ```
 
 `bing.sh` waits on this (user RUNNING) before declaring a variant ready.
+
+
+## 7. NEW PROFILE SEEDING — permissions AND keystore both matter (2026-09-09)
+
+Adding a variant (e.g. `domena3-prod`) on a server where `~/redroid-variants` is
+owned by a DIFFERENT uid (here `1000 oczosa-adml` vs AD login `piotr.wrotny`):
+
+1. `~/redroid-variants` itself is NOT writable by the login user → `mkdir` fails
+   with plain EPERM (NOT a chown issue — dir is 755, uid 1000). `sudo` exists
+   (AD group) but needs a password + PTY; scripted ssh CANNOT authenticate —
+   the OPERATOR runs the seeding commands by hand.
+2. **Seeding source = the FACTORY volume** (`~/redroid-variants/factory` —
+   pristine, never pm-cleared, no logged-out flags). NOT `test` (carries
+   pm-cleared/FRE state), NEVER a prod volume (clones a signed-in account —
+   registry contamination). Alternative: factory snapshot tar (`sudo tar -xzf
+   ~/profile-snapshots/<snap>.tar.gz -C ~/redroid-variants/<profile>`).
+3. **Commands (uid-preserving, see #1):**
+   ```bash
+   sudo mkdir -p ~/redroid-variants/<profile>
+   sudo chown <login-user> ~/redroid-variants/<profile>   # empty dir, pre-cp: safe
+   sudo cp -a ~/redroid-variants/factory/. ~/redroid-variants/<profile>/
+   ```
+   NO chown inside the copied tree — cp -a preserves Android uids
+   (keystore 1017 etc.). chown of the empty top dir BEFORE cp is safe.
+4. Then `./bing.sh use <profile>` recreates the container on that volume;
+   `./run_task.sh login_check <profile>` must return rc 2 (sign-in wall =
+   logged-out-fresh) before the owner logs in via noVNC/scrcpy.
+5. After login: `login_check` rc 0, registry row in `profiles/README.md`
+   updated (account, date, verified tasks).
+
+Anti-patterns (all hit 2026-09-09):
+- scripted `ssh -t` sudo password entry — impossible, don't try;
+- seeding from `test/` (pm-cleared state pollutes the prod profile);
+- plain `cp` without `-a` (loses Android uids → keystore2 panic per #1);
+- `chown` of anything inside a variant volume (see #1, breaks boot).
