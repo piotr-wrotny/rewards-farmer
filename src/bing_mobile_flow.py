@@ -731,18 +731,29 @@ class BingMobileFlow:
         if not self.open_rewards():
             self.shot("rewards-page-unexpected")
             log(f"WARNING: rewards page focus={self.activity()} (continuing anyway)")
-        state, card = self.rewards_state()
-        self.shot(f"rewards-state-{state}")
-        log(f"rewards state: {state}")
-        if state != "rte":
-            return state, False
-        self.tap(card, "read-to-earn-card")
-        time.sleep(8)
-        self.shot("read-to-earn-feed")
-        if not self.feed_visible():
-            log("click on Read to earn did not open the feed — terminal")
-            return "feed-not-opened", False
-        return state, True
+        for attempt in range(3):
+            state, card = self.rewards_state()
+            self.shot(f"rewards-state-{state}-{attempt+1}")
+            log(f"rewards state (attempt {attempt+1}): {state} card={card}")
+            if state != "rte":
+                return state, False
+            # stale-bounds guard: the card coords from a stale dump may hit a
+            # blank WebView (d3 2026-09-09 18:36). Re-check the tile is present
+            # with real bounds right before tapping.
+            fresh = self.rewards_state()
+            if fresh[0] != "rte" or fresh[1] is None:
+                log(f"attempt {attempt+1}: tile vanished on re-read — retrying")
+                time.sleep(5)
+                continue
+            self.tap(fresh[1], "read-to-earn-card")
+            time.sleep(8)
+            self.shot("read-to-earn-feed")
+            if self.feed_visible():
+                return state, True
+            log(f"attempt {attempt+1}: feed not visible after tap — retrying")
+            time.sleep(5)
+        log("click on Read to earn did not open the feed after 3 attempts — terminal")
+        return "feed-not-opened", False
 
     def read_to_earn_flow(self, max_total=60, max_per_session=5, max_sessions=20):
         """Session model, 1:1 with old run() (:222-279): 5 articles/session, one
