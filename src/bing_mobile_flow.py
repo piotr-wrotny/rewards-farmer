@@ -955,7 +955,7 @@ class BingMobileFlow:
         if only == "required-searches":
             return self.required_searches(count=iterations)
         if only == "daily":
-            return self.daily_flow(search_count=iterations)
+            return self.daily_flow()  # tiles cap every stage internally
         # 'read-to-earn' = full session model (iterations = max_total articles);
         # 'rewards'/'full' keep the flat evidence loop. 'full' searches first
         # (the original proven sequence).
