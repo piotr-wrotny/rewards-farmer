@@ -71,7 +71,7 @@ SOURCE_LINE = re.compile(r"^.+\s·\s.+$")  # old emulator: 'Source · time' in O
 AGE_LINE = re.compile(r"^(?=.*\d).{1,12}\b(ago|temu)$", re.IGNORECASE)
 SKIP_WORDS = ("Oferta", "Koszula", "Regatta", "Search", "Rewards", "Image Creator", "Trending")
 RTE_ACTIVE = re.compile(
-    r'content-desc="Read to earn, , \d+ out of \d+ points earned"'
+    r'content-desc="Read to earn, , (\d+) out of (\d+) points earned"'
     r'[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"'
 )
 RTE_DONE_TEXT = re.compile(r'text="Read to earn, \d+ points earned"')
@@ -117,6 +117,7 @@ class BingMobileFlow:
         self.query = query
         self.profile = profile
         self.seq = 0
+        self._rte_counter = None  # last (done, cap) read by rewards_state
         self.shot_dir, self.ui_dir = profile_dirs(profile)
         os.makedirs(self.shot_dir, exist_ok=True)
         os.makedirs(self.ui_dir, exist_ok=True)
@@ -386,27 +387,44 @@ class BingMobileFlow:
         self.shot("rewards-page")
         return ACT_REWARDS in self.focus()
 
+    def _rte_match(self, xml):
+        """RTE card match with REAL geometry: the lazy WebView sometimes renders
+        the tile with bounds=[0,0][0,0] (d3 2026-09-09 18:36) — its centre would
+        be (0,0): a tap there exits to home ('feed-not-opened' symptom). Returns
+        (state, card, counter): card None unless geometry is real."""
+        for m in RTE_ACTIVE.finditer(xml):
+            done, cap = int(m.group(1)), int(m.group(2))
+            x1, y1, x2, y2 = map(int, m.groups()[2:])
+            if done >= cap:
+                return "done", None, (done, cap)  # 30/30 => terminal, not active
+            if x2 <= x1 or y2 <= y1:
+                log(f"RTE tile zero-size bounds [{x1},{y1}][{x2},{y2}] — not tappable")
+                continue
+            return "rte", ((x1 + x2) // 2, (y1 + y2) // 2), (done, cap)
+        return None, None, None
+
     def rewards_state(self):
-        """Classify the Rewards page: 'rte' (card present), 'done', 'wall' (logged-out)."""
+        """Classify the Rewards page: 'rte' (tappable card), 'done', 'unrendered'
+        (RTE tile present but only zero-size nodes — lazy WebView), 'wall'.
+        Search-done tiles live ABOVE the RTE tile in the WebView — the scroll
+        hunt must not run before the full-page done check (d3 2026-09-09)."""
         xml = self.d.dump_hierarchy()
-        m = RTE_ACTIVE.search(xml)
-        if m:
-            x1, y1, x2, y2 = map(int, m.groups())
-            return "rte", ((x1 + x2) // 2, (y1 + y2) // 2)
-        if RTE_DONE_TEXT.search(xml):
-            return "done", None
-        if SIGNIN_WALL.search(xml):
-            return "wall", None
-        for _ in range(10):  # old-flow find_read_to_earn: 10 dump+scroll rounds
+        for _ in range(11):  # old-flow find_read_to_earn: dump + 10 scroll rounds
+            state, card, counter = self._rte_match(xml)
+            if state:
+                self._rte_counter = counter
+                return state, card
+            # no scrollable done yet: page-level terminal signals first
+            if self.TILE_RTE_DONE.search(xml) or RTE_DONE_TEXT.search(xml):
+                self._rte_counter = None
+                return "done", None
+            if SIGNIN_WALL.search(xml):
+                return "wall", None
+            if self.TILE_RTE.search(xml):
+                return "unrendered", None  # tile desc present, geometry zero-size
             self.scroll_feed()
             time.sleep(2)
             xml = self.d.dump_hierarchy()
-            m = RTE_ACTIVE.search(xml)
-            if m:
-                x1, y1, x2, y2 = map(int, m.groups())
-                return "rte", ((x1 + x2) // 2, (y1 + y2) // 2)
-            if RTE_DONE_TEXT.search(xml):
-                return "done", None
         return "unknown", None
 
     # ------------------------------------------------------------- article loop
@@ -775,6 +793,12 @@ class BingMobileFlow:
             state, card = self.rewards_state()
             self.shot(f"rewards-state-{state}-{attempt+1}")
             log(f"rewards state (attempt {attempt+1}): {state} card={card}")
+            if state == "unrendered":
+                # tile desc present, zero-size geometry: lazy WebView not laid
+                # out yet — settle and retry within the same attempt budget
+                log(f"attempt {attempt+1}: RTE tile unrendered — settling 8s")
+                time.sleep(8)
+                continue
             if state != "rte":
                 return state, False
             # stale-bounds guard: the card coords from a stale dump may hit a
@@ -801,9 +825,21 @@ class BingMobileFlow:
         seen = set()
         total = sessions = 0
         state = "start"
+        last_counter = None  # RTE tile (done, cap) at last session start
         try:
             while total < max_total and sessions < max_sessions:
                 state, opened = self.walk_rewards_path()
+                if opened:
+                    # benefit-driven stop: the tile counter is read by the same
+                    # rewards_state the walk just did — no extra navigation.
+                    # Counter unchanged across a FULL session => nothing credited.
+                    cur = self._rte_counter
+                    if last_counter is not None and cur == last_counter:
+                        log(f"Read to earn: tile counter {cur} unchanged after a "
+                            f"full session (Δ=0) — no further benefit, stopping")
+                        state = "no-benefit"
+                        break
+                    last_counter = cur
                 if not opened:
                     if state == "wall":
                         log("LOGGED-OUT SIGN-IN WALL — Read-to-earn requires an account. "
@@ -944,6 +980,7 @@ class BingMobileFlow:
     TILE_SEARCH = re.compile(r'content-desc="Search to earn, , (\d+) out of (\d+)')
     TILE_RTE = re.compile(r'content-desc="Read to earn, , (\d+) out of (\d+)')
     TILE_SEARCH_DONE = re.compile(r'content-desc="Search to earn, , (\d+) points earned"')
+    TILE_RTE_DONE = re.compile(r'content-desc="Read to earn, , (\d+) points earned"')
 
     def read_tiles(self):
         """Tile snapshot from the CURRENT hierarchy. rendered=False when the
@@ -965,7 +1002,6 @@ class BingMobileFlow:
         t["checkin"] = CHECKED_ICON.search(xml) is None and \
             ('text="' + CHECKIN_TEXT + '"') in xml
         return t
-
     def all_terminal(self, tiles):
         """True ONLY on a rendered page where every tile shows its done-signal."""
         if not tiles.get("rendered"):
