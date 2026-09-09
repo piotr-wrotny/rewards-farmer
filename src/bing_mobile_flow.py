@@ -306,6 +306,69 @@ class BingMobileFlow:
         self.press("back", "leave-results")
         time.sleep(3)
         return opened
+    # ------------------------------------------------------- required searches
+    # Port of web complete_required_searches (rewards_tasks.py:258): a fixed
+    # number of searches from a phrase pool built off nouns.txt + templates,
+    # scroll after each, 5-6 s settle. On mobile the search box is tapped fresh
+    # per query (AIToolsSuggestActivity keeps typed text between searches).
+    SEARCH_QUERY_TEMPLATES = (
+        "{noun} facts", "{noun} history", "{noun} benefits", "{noun} examples",
+        "{noun} guide {year}", "best {noun} tips", "how to use {noun}",
+        "{noun} for beginners", "{noun} near me", "{noun} latest news",
+        "{noun} interesting trivia", "{noun} comparison",
+    )
+
+    def build_phrase_pool(self, size=600):
+        nouns_path = os.path.join(ROOT, "nouns.txt")
+        nouns = list({n.strip().lower() for n in open(nouns_path, encoding="utf-8")
+                      if len(n.strip()) >= 3})
+        pool = []
+        while len(pool) < size and nouns:
+            noun = random.choice(nouns)
+            tpl = random.choice(self.SEARCH_QUERY_TEMPLATES)
+            pool.append(tpl.format(noun=noun, year=random.choice((2024, 2025, 2026))))
+        return pool
+
+    def required_searches(self, count=30):
+        """count searches: unique sample of the phrase pool; after each query —
+        random scroll on the SERP + 5-6 s wait (web flow parity, AGENTS.md).
+        Per-iteration ensure_home(): after back from the SERP the app can rest
+        on AIToolsSuggestActivity / MSN feed (tunnel pilot 2026-09-09) and the
+        home search box is not addressable there."""
+        queries = random.sample(self.build_phrase_pool(), min(count, 600))
+        ok = 0
+        try:
+            for i, q in enumerate(queries, 1):
+                if not self.ensure_home():
+                    log(f"[{i}/{len(queries)}] home unreachable — aborting batch")
+                    break
+                self.tap(SEARCH_BOX, f"search-box-{i}")
+                time.sleep(2)
+                self.type_text(q)
+                time.sleep(1.5)
+                self.press("enter", f"submit-search-{i}")
+                opened = self.wait_activity(ACT_BROWSER, 15)
+                if opened:
+                    time.sleep(5)
+                    # human-ish scroll: 1-3 random swipes down, then 5-6 s
+                    for _ in range(random.randint(1, 3)):
+                        self.swipe(0.5, 0.7, 0.5,
+                                   0.7 - random.uniform(0.08, 0.2), "search-scroll")
+                        time.sleep(random.uniform(0.8, 1.5))
+                    time.sleep(random.uniform(5, 6))
+                    self.press("back", f"leave-results-{i}")
+                    time.sleep(3)
+                    ok += 1
+                    log(f"[{i}/{len(queries)}] {q!r} serp=True")
+                else:
+                    log(f"[{i}/{len(queries)}] {q!r} SERP NOT OPENED")
+                    self.press("back", "recover-suggest")
+                    time.sleep(2)
+        finally:
+            self.cleanup_tabs()
+        return {"state": "searches_done", "articles_read": ok,
+                "searches": ok, "total": len(queries)}
+
 
     def open_rewards(self):
         if not self.ensure_home():
@@ -379,13 +442,22 @@ class BingMobileFlow:
         titles = list(best.values())
         ages = [n for n in nodes if AGE_LINE.match(n[4])]
         sources = [n for n in nodes if SOURCE_LINE.match(n[4])]  # old single-node layout
+        # Age-less RTE feed (domena2-prod 2026-09-09): source name WITHOUT time
+        # Like/Share rows sit far below (~380 px). Accept a short source-name-ish
+        # node just under the title as the pairing signal.
+        srcnames = [n for n in nodes
+                    if 0 < len(n[4]) <= 40 and n[4] not in ("Share", "See More")
+                    and not AGE_LINE.match(n[4]) and not SOURCE_LINE.match(n[4])
+                    and "Like" not in n[4]]
         durs = [n for n in nodes if VIDEO_BADGE.match(n[4]) and n[0] > 100]
         out = []
         for t in titles:
             if any(k in t[4] for k in SKIP_WORDS):
                 continue
             has_source = (any(-40 < a[0] - t[0] < 200 for a in ages)         # ReDroid
-                          or any(0 < s[0] - t[1] < 260 for s in sources))    # old layout
+                          or any(0 < s[0] - t[1] < 260 for s in sources)     # old layout
+                          or any(0 < s[0] - t[0] < 120 and s[3] < t[3]       # age-less feed
+                                 for s in srcnames))
             if not has_source:
                 continue
             if any(0 < t[0] - v[1] < 400 for v in durs):
@@ -399,10 +471,15 @@ class BingMobileFlow:
     def feed_visible(self):
         """Feed confirmation. Old flow: one text node 'Source · time'. ReDroid dump
         (prod_2 2026-09-01) splits source and relative-time into separate nodes, so
-        also accept a standalone relative-time like '15h ago' / '15 godz. temu'."""
+        also accept a standalone relative-time like '15h ago' / '15 godz. temu'.
+        domena2-prod 2026-09-09: the RTE feed can render articles with NO age node
+        at all (fresh feed: 'Showbizz Daily' + '1k Like'/'Share'/'See More' rows
+        only) — accept Like/Share/See More card anatomy as a feed signal too."""
         texts = [m.group(1) for m in
                  re.finditer(r'text="([^"]*)"', self.d.dump_hierarchy())]
-        return any(SOURCE_LINE.match(t) or AGE_LINE.match(t) for t in texts)
+        if any(SOURCE_LINE.match(t) or AGE_LINE.match(t) for t in texts):
+            return True
+        return "Share" in texts and ("See More" in texts or "Like" in texts)
 
     def read_article(self, dwell):
         end = time.time() + dwell
@@ -774,6 +851,8 @@ class BingMobileFlow:
 
     def run_only(self, only, iterations):
         self.to_home()
+        if only == "screenshot":
+            return self.screenshot_step()
         if only == "search":
             serp = self.search_and_results()
             log(f"search results BrowserActivity opened: {serp}")
@@ -782,6 +861,10 @@ class BingMobileFlow:
             return {"state": "searched", "articles_read": 0, "serp": serp}
         if only == "misc-cards":
             return self.misc_cards_flow()
+        if only == "required-searches":
+            return self.required_searches(count=iterations)
+        if only == "daily":
+            return self.daily_flow(search_count=iterations)
         # 'read-to-earn' = full session model (iterations = max_total articles);
         # 'rewards'/'full' keep the flat evidence loop. 'full' searches first
         # (the original proven sequence).
@@ -794,6 +877,36 @@ class BingMobileFlow:
                 raise RuntimeError("home not reachable after search")
         return self.rewards_tail(iterations)
 
+
+    def daily_flow(self, search_count=30, rte_max=60):
+        """Full daily chain, benefit-ordered (cheapest-first), each stage with its
+        own benefit signal and balance readouts before/after:
+          1. misc-cards  — pool drain (terminal: pool exhausted)
+          2. read-to-earn — session model (terminal: card 'done')
+          3. required-searches — capped by search_count (benefit check pending a
+             fresh profile: mobile search credit unverified, see
+             docs/ideas/2026-09-09-mobile-daily-flow-d2.md)
+        Search last: highest noise (30 SERP opens), and its credit is the one
+        category not yet proven on mobile."""
+        def _points():
+            try:
+                return self.daily_points()
+            except Exception as e:  # noqa: BLE001 — readout must not fail the chain
+                log(f"daily_points readout failed: {type(e).__name__}: {e}")
+                return None
+
+        results = {}
+        p0 = _points()
+        log(f"daily: start daily_points={p0}")
+        results["misc_cards"] = self.misc_cards_flow()
+        results["read_to_earn"] = self.read_to_earn_flow(max_total=rte_max)
+        results["required_searches"] = self.required_searches(count=search_count)
+        p1 = _points()
+        results["daily_points"] = {"start": p0, "end": p1}
+        log(f"daily: end daily_points={p0}->{p1}")
+        return {"state": "daily_done", "articles_read":
+                sum(r.get("articles_read", 0) for r in results.values()
+                    if isinstance(r, dict)), **results}
 
 def check_serial(serial):
     """Make sure adb sees the ReDroid serial (tunnel port must be forwarded already)."""
@@ -825,7 +938,8 @@ def main():
     p.add_argument("--profile", default="test",
                    help="profile variant (test|prod_1|prod_2|...); evidence -> artifacts/<profile>/")
     p.add_argument("--only", default="full",
-                   choices=("full", "search", "rewards", "read-to-earn", "misc-cards", "screenshot"))
+                   choices=("full", "search", "rewards", "read-to-earn", "misc-cards",
+                            "required-searches", "screenshot"))
     p.add_argument("--debug", action=argparse.BooleanOptionalAction, default=None,
                    help="screenshot every executed action (default: on for profile=test)")
     p.add_argument("--clear", action="store_true",
