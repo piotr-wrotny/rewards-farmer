@@ -41,6 +41,11 @@ session, the driver's home ready-check (back-recovery loop) handles it; don't tr
 "Microsoft Rewards missing" abort until a fresh launch confirms it — profile-menu taps
 can fire before the menu layer renders.
 
+> **2026-09-09 (d3):** nowa, prostsza ścieżka variant-direct login (krok 1b niżej)
+> + pełna procedura dodawania profilu z podziałem ról agent/operator:
+> `docs/profile-provisioning-mobile.md` (definiuje właściwy flow — ten plik
+> zostaje jako referencja ścieżki fabrycznej).
+
 ### 1b. Variant-direct login (d3 path, 2026-09-09) — alternative to §1
 
 Used when the variant volume already exists (seeded from factory per
