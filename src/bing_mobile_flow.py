@@ -87,6 +87,9 @@ CHECKIN_TEXT = "Check in"
 CHECKED_ICON = re.compile(r'text="checked"')  # filled Day-1 ring = checked in today
 TOTAL_POINTS = re.compile(r'text="([\d,]+)"[^>]*>\s*<node[^>]*text="Total points"')
 DAILY_POINTS = re.compile(r'text="(\d+/\d+)"[^>]*>\s*<node[^>]*text="Daily points"')
+# Rewards PAGE balance header (profile menu has 'Daily points'; the page itself
+# labels it "Today's points" with an N/M pill — d3 dumps 2026-09-09 19:06)
+REWARDS_HEADER = re.compile(r"Today's points|text=\"\d+/\d+\"")
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ART_DIR = os.path.join(ROOT, "artifacts")  # artifacts/<profile>/{screenshots,ui}
@@ -982,25 +985,48 @@ class BingMobileFlow:
     TILE_SEARCH_DONE = re.compile(r'content-desc="Search to earn, , (\d+) points earned"')
     TILE_RTE_DONE = re.compile(r'content-desc="Read to earn, , (\d+) points earned"')
 
-    def read_tiles(self):
-        """Tile snapshot from the CURRENT hierarchy. rendered=False when the
-        lazy WebView shows no balance rows — a blank render is NEVER terminal."""
-        xml = self.d.dump_hierarchy()
-        rendered = TOTAL_POINTS.search(xml) is not None or DAILY_POINTS.search(xml) is not None
+    def read_tiles(self, max_scrolls=10):
+        """Tile snapshot of the Rewards page. Lazy WebView + RecyclerView:
+        tiles below the fold are NOT in the dump (d3 2026-09-09: header render
+        showed no Search/RTE tiles at all). Poll for header render, then scroll
+        to the bottom collecting every dump. rendered=False when even after the
+        budget no balance header appeared — a blank render is NEVER terminal."""
+        xml = ""
+        deadline = time.time() + 20
+        while time.time() < deadline:
+            xml = self.d.dump_hierarchy()
+            if REWARDS_HEADER.search(xml):
+                break
+            self.swipe(0.5, 0.6, 0.5, 0.5, "rewards-settle")
+            time.sleep(2)
+        rendered = REWARDS_HEADER.search(xml) is not None
+        chunks = [xml]
+        if rendered:
+            for _ in range(max_scrolls):
+                self.swipe(0.5, 0.78, 0.5, 0.28, "tiles-scan")
+                time.sleep(1.5)
+                cur = self.d.dump_hierarchy()
+                chunks.append(cur)
+                if 'content-desc="Rewards"' in cur and \
+                        not re.search(r'earn \d+ points|out of \d+ points', cur):
+                    break
+        joined = "\n".join(chunks)
         t = {"search": None, "rte": None, "cards": 0, "checkin": False,
              "rendered": rendered}
-        m = self.TILE_SEARCH.search(xml) or self.TILE_SEARCH_DONE.search(xml)
-        if m:
-            if "out of" in m.group(0):
-                t["search"] = (int(m.group(1)), int(m.group(2)))
-            else:
-                v = int(m.group(1)); t["search"] = (v, v)
-        m = self.TILE_RTE.search(xml)
-        if m:
+        for m in self.TILE_SEARCH.finditer(joined):
+            t["search"] = (int(m.group(1)), int(m.group(2)))
+        m_done = self.TILE_SEARCH_DONE.search(joined)
+        if t["search"] is None and m_done:
+            v = int(m_done.group(1)); t["search"] = (v, v)
+        for m in self.TILE_RTE.finditer(joined):
             t["rte"] = (int(m.group(1)), int(m.group(2)))
-        t["cards"] = len(ACTIVITY_CARD.findall(xml))
-        t["checkin"] = CHECKED_ICON.search(xml) is None and \
-            ('text="' + CHECKIN_TEXT + '"') in xml
+        t["cards"] = len({m.group(1) for m in ACTIVITY_CARD.finditer(joined)})
+        t["checkin"] = CHECKED_ICON.search(joined) is None and \
+            ('text="' + CHECKIN_TEXT + '"') in joined
+        if rendered:  # RecyclerView drops off-screen nodes — check_in/cards
+            for _ in range(4):  # stages tap what they see: restore page top
+                self.swipe(0.5, 0.28, 0.5, 0.78, "tiles-top")
+                time.sleep(1)
         return t
     def all_terminal(self, tiles):
         """True ONLY on a rendered page where every tile shows its done-signal."""
