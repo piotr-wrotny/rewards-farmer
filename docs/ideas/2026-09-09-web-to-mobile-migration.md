@@ -62,3 +62,37 @@ migration uses it to prove parity).
 2026-09-09: direction agreed as incremental (searches → cards → visual), never
 big-bang; prod_1/domena1-prod stay on the current web+RTE schedule until domena2/3
 prove parity.
+
+## Lab findings (2026-09-09, local Docker with a domena1-prod profile copy)
+
+Decided during the lab: **redroid is the primary track; web profiles are frozen**
+(no new web selector work; web cron stays as-is until mobile parity, then retires).
+
+Evidence gathered (read-only probes + one +5 card click, on the copied profile):
+
+- The dashboard/earn UI our web flow drives is the SAME server-rendered React app
+  the Bing app's WebView shows. `#moreactivities` ("Keep earning", progress 0/30),
+  `#quests` (punchcards: onboarding 1/7 +1,320, Spotify 0/5), `#streaks` all exist —
+  the web `misc_cards` SKIP is NOT absence of the section.
+- Why web misc_cards SKIPs on current accounts: in this layout the earn content is
+  lazy-hydrated — `#moreactivities` only exists after scrolling the dashboard/earn
+  page, and the earn-tab click from `/dashboard` can be swallowed by the cookie
+  banner + "Welcome to Microsoft Rewards" dialog (click intercepted at the card's
+  point by an overlay). Production flow never scrolls before reading cards, so
+  `_container_by_id('moreactivities')` raises → [SKIP].
+- Card anatomy (mobile layout): `section#moreactivities > a[target=_blank]`, points
+  as `+5` inside card text, section progress `p.text-metadata` = "N/30"; completed
+  state also flips `data-disabled`. Old desktop selectors (`div.flex.w-full...`
+  status row, `p:nth-child(2)` description) do not match this layout at all.
+- Consequence for mobile port: the app's Rewards WebView contains exactly these
+  sections as accessibility nodes → misc/daily-set/quests port is mostly
+  uiautomator2 node walking, not new web selectors. **Do not invest in reworking
+  web selectors.**
+- Point targets visible on domena1-prod right now (what the mobile flow should
+  capture): onboarding quest 7 tasks (+1,320 total), daily set (+50), Keep-earning
+  cards 6×+5 (bing searches + edge welcome pages), streak bonus (12 stamps, 1000).
+
+2026-09-09 (evening, addendum): after the lab, direction hardened to
+**mobile-first**: new feature work (misc cards, daily set via WebView, quests,
+points collection) happens in `bing_mobile_flow.py`; the web stack gets zero new
+capability — it only keeps running its current tasks until retirement.
