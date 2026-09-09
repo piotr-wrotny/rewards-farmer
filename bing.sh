@@ -64,7 +64,7 @@ case "$cmd" in
     user_running && echo "user: RUNNING" || echo "user: NOT RUNNING"
     ls -1t "$LOGS"/bing-*.log 2>/dev/null | head -5 ;;
   run)
-    action="${1:?full|search|rewards|read-to-earn|screenshot}"; shift
+    action="${1:?full|search|rewards|read-to-earn|misc-cards|screenshot}"; shift
     prof=""; iters=6; dbg=""
     while [ $# -gt 0 ]; do case "$1" in
       --profile) prof="$2"; shift 2;;
