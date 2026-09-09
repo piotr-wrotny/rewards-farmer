@@ -578,6 +578,43 @@ class BingMobileFlow:
                 return title, int(m.group(2)), (x1 + x2) // 2, cy
         return None
 
+    def _quiz_flow(self, max_questions=6):
+        """Copilot quiz in BrowserActivity (Rewards 'earn N points' card that is a
+        quiz, e.g. Wizarding Creator, d3 2026-09-09 18:50). Answers do NOT need to
+        be correct (user directive) — tap the first A-D option, advance via
+        Next/View result until the terminal screen, then leave the tab.
+        Options are clickable nodes carrying content-desc='A. …'; the advance
+        buttons carry text='Next'/'View result' (separate nodes)."""
+        opt = re.compile(r"^[A-D]\. ")
+        adv = re.compile(r"^(Next|View result|Continue|Finish|Try again)$")
+        for i in range(max_questions * 3):
+            xml = self.d.dump_hierarchy()
+            moved = False
+            for m in re.finditer(
+                    r'(?:content-desc|text)="([^"]*)"[^>]*clickable="true"[^>]*'
+                    r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', xml):
+                t = m.group(1)
+                if not (opt.match(t) or adv.match(t.strip())):
+                    continue
+                x1, y1, x2, y2 = map(int, m.groups()[1:])
+                if x2 <= x1:
+                    continue
+                action("tap", f"quiz {'option' if opt.match(t) else 'advance'}: {t[:24]}")
+                self.d.click((x1 + x2) // 2, (y1 + y2) // 2)
+                time.sleep(5)
+                moved = True
+                break
+            if not moved:
+                # no options, no advance buttons: terminal screen (score view)
+                if "poprawne" in xml or "Score" in xml or "Continue exploring" in xml:
+                    log(f"quiz finished after {i} taps")
+                    break
+                self.press("back", "quiz-unknown-screen")
+                time.sleep(3)
+                break
+        self.press("back", "leave-quiz")
+        time.sleep(3)
+
     def misc_cards(self, max_cards=None):
         """Click every 'earn N points' card until the pool drains (scrolling
         re-reads each round; completed cards drop out of the pool)."""
@@ -608,10 +645,13 @@ class BingMobileFlow:
             time.sleep(6)
             left = ACT_REWARDS not in self.focus()
             if left:
-                self.shot(f"activity-opened-{len(done) + 1}")
-                self.read_article(random.uniform(5, 10))
-                self.press("back", "leave-activity")
-                time.sleep(3)
+                if ACT_BROWSER in self.focus() and self.d(textMatches=r"^[A-D]\. ").exists:
+                    self._quiz_flow()
+                else:
+                    self.shot(f"activity-opened-{len(done) + 1}")
+                    self.read_article(random.uniform(5, 10))
+                    self.press("back", "leave-activity")
+                    time.sleep(3)
             # completion signal: a credited card loses its 'earn N points' desc
             # (domena1-prod 2026-09-09: after the +5/+10 credits the card left
             # the pool; a full walk then finds no more earnable cards).
