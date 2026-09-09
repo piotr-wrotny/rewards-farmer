@@ -1,7 +1,11 @@
 # Profile registry
 
-Named credential variants for the Bing mobile flow. A profile = an unpacked Android
-`/data` volume at `~/redroid-variants/<name>` on the server + a snapshot
+Named credential variants for BOTH flows. One profile name = one Microsoft account,
+held in two independent stores: a mobile Android `/data` volume and a web Edge
+user-data-dir. Provision them separately (factory/noVNC), register them in one row.
+
+**Mobile** (`com.microsoft.bing`): unpacked Android `/data` volume at
+`~/redroid-variants/<name>` on the server + a snapshot
 `~/profile-snapshots/<name>.tar.gz` (whole volume; uid-perfect; **server-only — never
 commit profile data**, see `.gitignore`). Switch: `./bing.sh use <name>`. Create:
 `scripts/factory.ps1 login <name>` (scrcpy, user logs in — agent never sees
@@ -11,11 +15,20 @@ credentials) then `factory.ps1 save <name>`. New variant from snapshot:
 ssh piotr.wrotny@10.17.103.115 'p=<name>; docker run --rm -v /home/piotr.wrotny:/host busybox sh -c "mkdir -p /host/redroid-variants/$p && tar -C /host/redroid-variants/$p -xzf /host/profile-snapshots/$p.tar.gz" && cd ~/rewards-farmer-main && ./bing.sh use $p'
 ```
 
-| name | kind | account | snapshot | status |
-|------|------|---------|----------|--------|
+| name | kind | account | mobile snapshot | status |
+|------|------|---------|-----------------|--------|
 | test | anonymous | — | `test.tar.gz` | rebuilt 2026-09-01 from factory baseline (`pm clear` + `cp -a`); `bing.sh clear` allowed |
 | prod_2 | signed-in | 616piotrek@gmail.com | `prod_2.tar.gz` | READ-TO-EARN e2e VERIFIED 2026-09-01: 30/30 daily pts, 2 sessions (`docs/bing-mobile-flow.md` § Read-to-earn e2e) |
 | prod_1 | signed-in | piotrwro01@gmail.com | `prod_1.tar.gz` | VERIFIED signed-in 2026-09-01 (factory login → snapshot → variant); RTE `30 points earned` |
+| domena1-prod | signed-in | <uzupełnić> | (po `factory.ps1 save`) | PROVISIONING 2026-09-09: mobile = factory login in progress; web = `./web_login.sh domena1-prod` (noVNC) |
+
+**Web** (Edge): a user-data-dir volume — `default` is the historical
+`~/rewards-farmer-main/edge-profile`; named profiles live at
+`~/rewards-farmer-main/edge-profiles/<name>` (mounted as `/data/edge-profile`).
+Provision: `./web_login.sh <name>` (login-mode container + noVNC, user signs in),
+verify: `./run_task.sh login_check <name>` (rc 0 = signed in, 2 = wall). Run:
+`./run_daily.sh <name>` / `./run_task.sh <task> <name>` (wrappers: `$1` or
+`WEB_PROFILE`). Each volume needs `visual-search-asset.jpg` (web_login.sh copies it).
 
 Snapshot hygiene: verify with `tar -tzf <f> | grep system/packages.xml >/dev/null`
 (plain grep, NEVER `grep -q` — closes the pipe, tar SIGPIPE trips pipefail; bing.sh

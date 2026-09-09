@@ -4,19 +4,27 @@ This project runs on server `piotr.wrotny@10.17.103.115` from `~/rewards-farmer-
 
 ## Main flow
 
-- `./run_daily.sh` — full run (all tasks as implemented by `complete_all_tasks`).
+- `./run_daily.sh [profile]` — full run (all tasks as implemented by
+  `complete_all_tasks`). `profile` defaults to `default`; named profiles mount
+  `~/rewards-farmer-main/edge-profiles/<name>` instead of `edge-profile`.
 
 ## Task-specific flows
 
-All scripts below use the same Edge profile volume (`~/rewards-farmer-main/edge-profile`), clear singleton locks, and write logs to `~/rewards-farmer-main/logs`.
+All scripts below clear singleton locks and write logs to `~/rewards-farmer-main/logs`.
+Web credential profiles are one Microsoft account per Edge user-data-dir: `default`
+= `~/rewards-farmer-main/edge-profile`, named = `edge-profiles/<name>` (registry:
+`profiles/README.md`). Pass the profile as `$1` to the one-liners (or env
+`WEB_PROFILE`); `run_task.sh` takes it as `$2`.
 
-- `./run_task.sh <task>` — generic entrypoint for one task.
-- `./run_daily_set.sh` — runs `daily_set`.
-- `./run_explore_on_bing.sh` — runs `explore_on_bing`.
-- `./run_visual_search.sh` — runs `visual_search`.
-- `./run_misc_cards.sh` — runs `misc_cards`.
-- `./run_required_searches.sh` — runs `required_searches`.
-- `./run_bonus_points.sh` — runs `bonus_points`.
+- `./run_task.sh <task> [profile]` — generic entrypoint for one task.
+- `./run_daily_set.sh [profile]` — runs `daily_set`.
+- `./run_explore_on_bing.sh [profile]` — runs `explore_on_bing`.
+- `./run_visual_search.sh [profile]` — runs `visual_search`.
+- `./run_misc_cards.sh [profile]` — runs `misc_cards`.
+- `./run_required_searches.sh [profile]` — runs `required_searches`.
+- `./run_bonus_points.sh [profile]` — runs `bonus_points`.
+- `./web_login.sh <profile> [novnc-port]` — provision a web profile: login-mode
+  container + noVNC; user signs in by hand; then `./run_task.sh login_check <profile>`.
 
 Supported `<task>` values:
 
@@ -27,6 +35,8 @@ Supported `<task>` values:
 - `required_searches`
 - `bonus_points`
 - `all`
+- `login_check` — provisioning probe only (rc 0 signed-in / 2 sign-in wall); never
+  part of `all`
 
 Optional env overrides for `run_task.sh`:
 
@@ -51,8 +61,8 @@ Automation resolves image in this order:
 
 ## Logs
 
-- Daily flow: `logs/web-run-YYYYMMDD-HHMMSS.log`
-- Task flow: `logs/web-run-<task>-YYYYMMDD-HHMMSS.log`
+- Daily flow: `logs/web-run-YYYYMMDD-HHMMSS.log` (named profile: `web-run-<profile>-…`)
+- Task flow: `logs/web-run-<task>-YYYYMMDD-HHMMSS.log` (named: `web-run-<task>-<profile>-…`)
 
 ## Mobile flow (ReDroid on this server, no emulator)
 

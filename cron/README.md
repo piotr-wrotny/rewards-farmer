@@ -23,4 +23,11 @@ Proposed, NOT installed: a `prod_2` read-to-earn line (stagger so flock
 - Exit codes: 0 ok (incl. terminal wall/done), 2 flow failure, 3 infra — the scheduler
   sees failure via exit code; per-run detail in `logs/bing-<profile>-<action>-<TS>.log`.
 - Self-heal: `bing.sh run` recreates a missing/dead container on the right volume.
+- Web named profiles: `run_daily.sh <profile>` gets its own staggered line (the web
+  flow kills all image containers before starting, so two web profiles must never
+  overlap). Install only after `login_check <profile>` passes:
+
+```cron
+# 30 3 * * * /home/piotr.wrotny/rewards-farmer-main/run_daily.sh domena1-prod >> /home/piotr.wrotny/rewards-farmer-main/logs/cron.log 2>&1
+```
 - To add a profile: create the variant (`profiles/README.md`), add a staggered line.
