@@ -64,7 +64,7 @@ case "$cmd" in
     user_running && echo "user: RUNNING" || echo "user: NOT RUNNING"
     ls -1t "$LOGS"/bing-*.log 2>/dev/null | head -5 ;;
   run)
-    action="${1:?full|search|rewards|read-to-earn|misc-cards|screenshot}"; shift
+    action="${1:?full|search|rewards|read-to-earn|misc-cards|screenshot|daily}"; shift
     prof=""; iters=6; dbg=""
     while [ $# -gt 0 ]; do case "$1" in
       --profile) prof="$2"; shift 2;;
@@ -76,8 +76,8 @@ case "$cmd" in
     LOCK=/tmp/bing-$PORT.lock; exec 9>"$LOCK"; flock 9
     ensure_container "$prof"
     ts="$(date +%Y%m%d-%H%M%S)"; log="$LOGS/bing-$prof-$action-$ts.log"
-    args=("$DRIVER" --serial "$(serial $PORT)" --profile "$prof" --only "$action" --iters "$iters")
-    [ -n "$dbg" ] && args+=("$dbg")
+    args=("$DRIVER" --serial "$(serial $PORT)" --profile "$prof" --only "$action")
+    [ "$action" = daily ] || args+=(--iters "$iters")  # daily: tiles cap stages
     "$PY" "${args[@]}" 2>&1 | tee "$log"; rc=${PIPESTATUS[0]}
     echo "log=$log rc=$rc"; exit $rc ;;
   clear)
