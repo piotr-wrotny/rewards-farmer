@@ -24,7 +24,7 @@ SSH tunnel first):
     python src/bing_mobile_flow.py [--profile P] [--only ACTION] [--iters N]
                                    [--debug|--no-debug] [--clear] [--serial S] [--server U@H]
 
-    --only    full|search|rewards|read-to-earn|screenshot (default full)
+    --only    full|search|rewards|read-to-earn|misc-cards|screenshot (default full)
     --clear   wipe Bing app data on the server (pm clear) so the next attempt starts
               fresh: FRE, permission dialogs and onboarding reappear. ONLY for
               profile=test — prod profiles stay signed in and are never cleared.
@@ -76,6 +76,17 @@ RTE_ACTIVE = re.compile(
 )
 RTE_DONE_TEXT = re.compile(r'text="Read to earn, \d+ points earned"')
 SIGNIN_WALL = re.compile(r"Join Microsoft Rewards|Access now")
+# Rewards-page earnable activity cards (More/Daily activities). Verified domena1-prod
+# 2026-09-09: tap at center opens the SERP in BrowserActivity, points credited
+# (+10/+10/+5 observed, Daily points 55/75 -> 75/75), card leaves the pool after.
+ACTIVITY_CARD = re.compile(
+    r'content-desc="([^"]*?, earn (\d+) points[^"]*)"'
+    r'[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"'
+)
+CHECKIN_TEXT = "Check in"
+CHECKED_ICON = re.compile(r'text="checked"')  # filled Day-1 ring = checked in today
+TOTAL_POINTS = re.compile(r'text="([\d,]+)"[^>]*>\s*<node[^>]*text="Total points"')
+DAILY_POINTS = re.compile(r'text="(\d+/\d+)"[^>]*>\s*<node[^>]*text="Daily points"')
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ART_DIR = os.path.join(ROOT, "artifacts")  # artifacts/<profile>/{screenshots,ui}
@@ -421,6 +432,115 @@ class BingMobileFlow:
             done += 1
             log(f"[{done}/{iterations}] read: {title[:60]}")
         return done
+
+    # ------------------------------------------------------------ misc cards
+    # Port of the web flow's misc cards + the streak check-in the web flow gets
+    # from 'Read to earn'-style streaks (complete_misc_cards, rewards_tasks.py
+    # :236-255). On the app's Rewards page (sapphire TemplateActivity WebView)
+    # every earnable card is one content-desc node '<title>, <blurb>, earn N
+    # points' — verified domena1-prod 2026-09-09: tapping its centre opens the
+    # card's SERP/quiz in BrowserActivity, a dwell + back credits the points
+    # (Daily points 55/75 -> 75/75) and the node loses the 'earn N points'
+    # label, so pool exhaustion IS the web flow's card_is_complete check.
+    # CRITICAL: back while focus is still TemplateActivity EXITS Rewards to the
+    # browser home — only press back when the card actually left the page.
+    CARD_BAND = (200, 1020)  # tap-safe y window (below chrome, above navbar)
+
+    def _read_points(self, which):
+        """Balance rows live only in the profile menu (authoritative,
+        domena1-prod 2026-09-09: '97 Total points', '75/75 Daily points')."""
+        if ACT_REWARDS in self.focus():
+            self.press("back", "rewards-to-home")  # ONE back exits to home
+            time.sleep(3)
+        if not self.ensure_home():
+            raise RuntimeError("home not reachable for balance read")
+        self.tap(PROFILE_BUTTON, "profile-button-balance")
+        time.sleep(4)
+        xml = self.d.dump_hierarchy()
+        m = which.search(xml)
+        self.press("back", "leave-profile-menu")
+        time.sleep(2)
+        return m.group(1) if m else None
+
+    def total_points(self):
+        return self._read_points(TOTAL_POINTS)
+
+    def daily_points(self):
+        return self._read_points(DAILY_POINTS)
+
+    def check_in(self):
+        """Streak check-in (text node in the Streaks card; NOT clickable=true —
+        raw coordinate click at its centre reaches the WebView handler).
+        Success signal: Day-1 ring renders alt-text 'checked' (domena1-prod
+        2026-09-09; the '0 day' label lags and stays after checking)."""
+        xml = self.d.dump_hierarchy()
+        if CHECKED_ICON.search(xml):
+            log("check-in: already checked in today (checked icon present)")
+            return "already"
+        m = re.search(r'<node[^>]*text="' + CHECKIN_TEXT + r'"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', xml)
+        if not m:
+            log("check-in: 'Check in' node not found — skipping")
+            return "missing"
+        x1, y1, x2, y2 = map(int, m.groups())
+        self.tap(((x1 + x2) // 2, (y1 + y2) // 2), "check-in")
+        time.sleep(4)
+        ok = CHECKED_ICON.search(self.d.dump_hierarchy()) is not None
+        log(f"check-in: {'confirmed' if ok else 'UNCONFIRMED (no checked icon)'}")
+        return "ok" if ok else "unconfirmed"
+
+    def _visible_activity_card(self, xml):
+        for m in ACTIVITY_CARD.finditer(xml):
+            title = m.group(1).split(",")[0].strip()
+            x1, y1, x2, y2 = map(int, m.groups()[2:])
+            cy = (y1 + y2) // 2
+            if self.CARD_BAND[0] < cy < self.CARD_BAND[1]:
+                return title, int(m.group(2)), (x1 + x2) // 2, cy
+        return None
+
+    def misc_cards(self, max_cards=None):
+        """Click every 'earn N points' card until the pool drains (scrolling
+        re-reads each round; completed cards drop out of the pool)."""
+        done, scrolls, attempted = [], 0, set()
+        while scrolls < 25:
+            if ACT_REWARDS not in self.focus():
+                log("misc cards: left Rewards page unexpectedly — reopening")
+                if not self.open_rewards():
+                    break
+            xml = self.d.dump_hierarchy()
+            card = self._visible_activity_card(xml)
+            if card is None:
+                scrolls += 1
+                self.scroll_feed()
+                time.sleep(2.2)
+                continue
+            title, pts, cx, cy = card
+            scrolls = 0
+            if title in attempted:
+                # pool card we already tried but that never left the pool:
+                # scroll past it instead of clicking forever
+                self.scroll_feed()
+                time.sleep(2.2)
+                scrolls += 1
+                continue
+            attempted.add(title)
+            self.tap((cx, cy), f"activity-card:{title[:30]}")
+            time.sleep(6)
+            left = ACT_REWARDS not in self.focus()
+            if left:
+                self.shot(f"activity-opened-{len(done) + 1}")
+                self.read_article(random.uniform(5, 10))
+                self.press("back", "leave-activity")
+                time.sleep(3)
+            # completion signal: a credited card loses its 'earn N points' desc
+            # (domena1-prod 2026-09-09: after the +5/+10 credits the card left
+            # the pool; a full walk then finds no more earnable cards).
+            gone = not re.search(re.escape(title) + r"[^\"]*earn \d+ points",
+                                 self.d.dump_hierarchy())
+            done.append((title, pts, gone))
+            log(f"[{len(done)}] card {title[:44]!r} +{pts} credited={gone}")
+            if max_cards and len(done) >= max_cards:
+                break
+        return done
     # ------------------------------------------------------------- tab hygiene
     # Verbatim port of deploy/read_to_earn.py :48-108 (spec:
     # docs/superpowers/specs/2026-09-01-read-to-earn-port-spec.md §3).
@@ -611,16 +731,57 @@ class BingMobileFlow:
         self.shot("read-to-earn-feed")
         return {"state": state, "articles_read": self.article_loop(iterations)}
 
+    def misc_cards_flow(self, max_cards=None):
+        """check-in + drain the 'earn N points' pool, then tab cleanup and the
+        authoritative balance readout (profile menu)."""
+        try:
+            daily_before = self.daily_points()
+        except Exception as e:  # noqa: BLE001 — balance readout must not fail the run
+            log(f"balance readout (before) failed: {type(e).__name__}: {e}")
+            daily_before = None
+        closed = 0
+        try:
+            if not self.open_rewards():
+                self.shot("rewards-page-unexpected")
+                log(f"WARNING: rewards page focus={self.activity()} (continuing anyway)")
+            # check-in FIRST: rewards_state() scrolls hunting the RTE card and
+            # the virtualised WebView then drops the Streaks card (top of page)
+            # from the hierarchy — 'Check in' becomes invisible (domena2-prod
+            # 2026-09-09: checkin=missing with the button never seen).
+            ci = self.check_in()
+            state, _ = self.rewards_state()
+            if state == "wall":
+                log("LOGGED-OUT SIGN-IN WALL — misc cards need an account (prod path).")
+                return {"state": "wall", "articles_read": 0}
+            cards = self.misc_cards(max_cards=max_cards)
+        finally:
+            # terminal invariant (AGENTS.md): the flow ALWAYS ends with every
+            # browser tab closed — next run starts clean. Also fires on the
+            # early `wall` return and on exceptions.
+            closed = self.cleanup_tabs()
+        try:
+            daily_after = self.daily_points()
+        except Exception as e:  # noqa: BLE001 — balance readout must not fail the run
+            log(f"balance readout failed: {type(e).__name__}: {e}")
+            daily_after = None
+        credited = sum(pts for _, pts, gone in cards if gone)
+        log(f"misc cards: {len(cards)} clicked, {credited} pts credited, "
+            f"checkin={ci}, daily={daily_before}->{daily_after}, tabs_closed={closed}")
+        return {"state": "misc_done", "articles_read": len(cards),
+                "cards": [{"title": t, "pts": p, "credited": g} for t, p, g in cards],
+                "checkin": ci, "points_credited": credited,
+                "daily_points_after": daily_after}
+
     def run_only(self, only, iterations):
         self.to_home()
-        if only == "screenshot":
-            return self.screenshot_step()
         if only == "search":
             serp = self.search_and_results()
             log(f"search results BrowserActivity opened: {serp}")
             if not self.ensure_home():
                 raise RuntimeError("home not reachable after search")
             return {"state": "searched", "articles_read": 0, "serp": serp}
+        if only == "misc-cards":
+            return self.misc_cards_flow()
         # 'read-to-earn' = full session model (iterations = max_total articles);
         # 'rewards'/'full' keep the flat evidence loop. 'full' searches first
         # (the original proven sequence).
@@ -664,7 +825,7 @@ def main():
     p.add_argument("--profile", default="test",
                    help="profile variant (test|prod_1|prod_2|...); evidence -> artifacts/<profile>/")
     p.add_argument("--only", default="full",
-                   choices=("full", "search", "rewards", "read-to-earn", "screenshot"))
+                   choices=("full", "search", "rewards", "read-to-earn", "misc-cards", "screenshot"))
     p.add_argument("--debug", action=argparse.BooleanOptionalAction, default=None,
                    help="screenshot every executed action (default: on for profile=test)")
     p.add_argument("--clear", action="store_true",

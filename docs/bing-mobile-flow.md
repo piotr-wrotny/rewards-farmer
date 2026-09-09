@@ -86,6 +86,54 @@ twice, keep the tallest (short duplicate centers on the Like/Share row). Home ga
 require `sa_profile_button` — the MSN feed view shares `MainSapphireActivity` +
 search box but has no profile button (caused one rc=2).
 
+### Misc cards e2e (port of web `complete_misc_cards`, verified 2026-09-09)
+
+`./bing.sh run misc-cards --profile <p>` — streak check-in + drains the Rewards-page
+'earn N points' pool + terminal tab cleanup + authoritative balance readout.
+
+| Claim | Evidence |
+|---|---|
+| domena1-prod (cards pre-consumed by web run): 5×+5, all `credited=True` | `bing-domena1-prod-misc-cards-20260909-141327.log` rc 0; account delta 97→122 = +25 (exact card sum) |
+| domena2-prod CLEAN account: 9×+5=39 + one 10-pt card next run; `Daily points 0/75→15/75→25/75` | `bing-domena2-prod-misc-cards-20260909-143317.log` + `...144056.log` rc 0 |
+| Zero-tabs terminal invariant | `cleanup_tabs()` in `finally` (fires on wall/exception too); `cleanup: closed 1 tabs`, next run opens no leftovers |
+
+Technical contract (ReDroid Rewards WebView, domena1/2-prod 2026-09-09) — everything
+the driver relies on:
+
+1. **Card identity** = ONE `content-desc` node `'<Title>, <blurb>, earn N points'`
+   (appears twice, nested; either box centers inside the card). Completed card's desc
+   loses the `earn N points` suffix → pool-exhaustion == web flow's `card_is_complete`.
+   There is no 'completed' text on mobile.
+2. **Tap = raw coordinate click at node center.** WebView nodes are all
+   `clickable="false"` in the a11y tree — uiautomator selectors like `.click()` still
+   work (they click coordinates too); nothing in the WebView is findable by clickable.
+3. **Opening a card leaves the page**: focus goes `TemplateActivity` →
+   `BrowserActivity` (SERP/quiz). **One `back` returns to Rewards.** CRITICAL: pressing
+   back while STILL on `TemplateActivity` EXITS Rewards to browser home (cost two dead
+   prototype rounds) — always gate `back` on `ACT_REWARDS not in focus()`.
+4. **WebView virtualises**: sections outside the viewport (Streaks header at top,
+   More-activities cards below the fold) vanish from the hierarchy. Scroll-to-TOP via
+   swipe-down at top of page dismisses the Rewards page (pull-gesture). Order matters:
+   read top-of-page things (check-in) immediately after `open_rewards()`, before any
+   `rewards_state()` scroll hunting.
+5. **Tap-safe band** y∈(200,1020): chrome occupies <150, app navbar 1072-1184 (Back/
+   Overview/Home/Camera/Copilot/Tabs/Apps nodes) — a card half-overlapping the navbar
+   taps the navbar. Card centers are ~608 px tall boxes; require the CENTER inside band.
+6. **Balance readout is only in the profile menu** (`sa_profile_button`): rows
+   `'<N>' + 'Total points'`, `'<a>/<b>' + 'Daily points'`. The Rewards header shows only
+   total (`'72' + 'pts'`); DOM order (not bounds) separates value from label.
+7. **Check-in**: text node `'Check in'` (Streaks card). On domena1-prod the center tap
+   renders a transient Day-1 `text="checked"` image; the `'0 day'` label NEVER updates
+   in-session — do not use it as success signal. On the FRESH domena2-prod account the
+   button is inert (pixel-diff of before/after tap = 0.0): streak check-in appears to
+   need account maturity/eligibility. Best-effort only: logged `unconfirmed`, never
+   fails the run.
+8. **Dailies stack**: misc cards credit straight into `Daily points a/75` (0→25 on a
+   clean account); no separate daily-set panel opening is needed for THEM. The mobile
+   'Daily set' streak widget ('Search 1 time' + 'Daily set' texts) is inert to taps at
+   any explored point (text/CTA/strip) — its activities are the same SERP-style cards;
+   the web flow's daily-set port is NOT needed for those points.
+
 ## Test path vs production path
 
 | | Test path (`test`) | Production path (`prod_N`) |
