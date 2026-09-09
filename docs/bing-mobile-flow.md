@@ -134,22 +134,39 @@ the driver relies on:
    any explored point (text/CTA/strip) — its activities are the same SERP-style cards;
    the web flow's daily-set port is NOT needed for those points.
 
-### Required searches + full daily chain (2026-09-09, `mobile-daily-flow-d2`)
+### Tile-driven daily (`--only daily` / `bing.sh run daily`) — CANONICAL prod flow (2026-09-09)
 
-`--only required-searches --iters N` (default 30) and `--only daily` (misc-cards →
-read-to-earn → N searches, balance readouts before/after) — verified on
-domena2-prod:
+`./bing.sh run daily --profile <p> [--no-debug]` — the whole day is driven by
+Rewards TILE states, not counters. `iterations` does not apply (tiles cap every
+stage internally). Verified 2026-09-09 evening on all three prod profiles:
+domena3 `45/75→75/75` (RTE +30, 4 sessions), domena2 `65/75→75/75` (pool card
+'Upcoming live music events' +10), domena1 `75/75→75/75` (all terminal → quick
+Δ-stop; check-in `ok`). All rc=0.
 
-| Claim | Evidence |
+```
+loop (≤6 rounds):
+  open_rewards()
+  tiles = read_tiles()      # header-render poll ('Today's points'|N/M|'pts' pill —
+                            #   variants differ per account!), then scroll-to-bottom
+                            #   collecting dumps (RecyclerView drops off-screen
+                            #   nodes), then restore top (stages tap what they see)
+  all_terminal && break     # rendered-guard: blank WebView is NEVER terminal
+  check-in → pool cards (quizzes auto-answered) → RTE → searches  (cheapest first)
+  Δpoints == 0 across a full round (rnd>1) → saturated → break
+```
+
+| Invariant | Guard / evidence |
 |---|---|
-| 30/30 searches, unique pool sample, tab cleanup | `daily` run 16:39 rc 0; cleanup closed 15/30 tabs |
-| Per-iteration `ensure_home()` REQUIRED | back from SERP can rest on `AIToolsSuggestActivity`/MSN — home `sa_search_box` not addressable there (pilot crash 15:55) |
-| Age-less RTE feed | `Showbizz Daily`-style cards have NO age node; source-name 30–60 px below title top + Like/Share/See More anatomy = feed signal (`feed_visible`/`candidate_articles` extended; unit-tested against saved dumps, 20 ageless dumps yield candidates) |
-| `daily` chain benefit-terminal | d2 run: misc pool empty → 0 cards, RTE `done` → skip, searches 15/15; `65/75 → 65/75` — no timeouts burned on saturated categories |
-| Search credit on mobile UNVERIFIED | 30 searches → 0 delta on d2 (53/75 before/after); protocol in `docs/ideas/2026-09-09-mobile-daily-flow-d2.md` — needs fresh profile |
+| Zero-size bounds tile (`[0,0][0,0]`) = `unrendered`, NEVER tap (center=(0,0) exits app — root cause of day-0 RTE 'feed-not-opened' on d3) | settle 8 s retry ×3 (`walk_rewards_path`) |
+| RTE done: `N out of M` with `done>=cap` counts as done, not active | `_rte_match`; d3 19:29 `done` at 30/30, flow stopped |
+| RTE benefit-stop: tile (done,cap) unchanged after a FULL session → `no-benefit` | d2/d3 saturated runs burned no timeouts |
+| Δ=0 across a round → stop (not timeouts/counters) | all three evening runs ended `ZERO delta … stopping` in round 2 |
+| Check-in on accounts without the `checked` alt-text renders `UNCONFIRMED`, best-effort, never fails (d2 = streak-ineligible account) | d2 run 19:47 |
 
-Cadence ~26 s/search (target 8–15 s; trim SERP settle + dwell next pass).
-Search runs LAST in the chain: highest noise, credit unproven.
+Search credit caveat: mobile SERP credit is proven ONLY on day-0 fresh accounts
+(d3: +3/SERP, 15/15 TERMINAL). Mature accounts (d2 today) show 0 delta from
+searches — the tile, not the counter, decides whether the stage runs.
+Cadence ~26 s/search (trim settle/dwell next pass); searches run LAST.
 
 ## Test path vs production path
 

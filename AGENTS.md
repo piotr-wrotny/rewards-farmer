@@ -82,7 +82,7 @@ One entrypoint, interactive and cron alike (runs ON the server, `~/rewards-farme
 ```bash
 ./bing.sh use <profile>                     # switch active variant (recreate container)
 ./bing.sh current | status
-./bing.sh run full|search|rewards|read-to-earn|misc-cards|screenshot [--profile P] [--iters N] [--debug|--no-debug]
+./bing.sh run daily|full|search|rewards|read-to-earn|misc-cards|screenshot [--profile P] [--iters N] [--debug|--no-debug]
 ./bing.sh clear [--profile test]            # pm clear — profile test ONLY
 ./bing.sh snapshot <name>                   # freeze factory volume -> profile-snapshots/<name>.tar.gz
 ```
