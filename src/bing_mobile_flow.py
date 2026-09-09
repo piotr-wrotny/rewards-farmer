@@ -474,12 +474,16 @@ class BingMobileFlow:
         also accept a standalone relative-time like '15h ago' / '15 godz. temu'.
         domena2-prod 2026-09-09: the RTE feed can render articles with NO age node
         at all (fresh feed: 'Showbizz Daily' + '1k Like'/'Share'/'See More' rows
-        only) — accept Like/Share/See More card anatomy as a feed signal too."""
+        only) — accept Like/Share/See More card anatomy as a feed signal too.
+        Fallback needs ≥2 Like rows AND ≥2 long article titles: a single-article
+        or social-post view shows the same widgets but only one card."""
         texts = [m.group(1) for m in
                  re.finditer(r'text="([^"]*)"', self.d.dump_hierarchy())]
         if any(SOURCE_LINE.match(t) or AGE_LINE.match(t) for t in texts):
             return True
-        return "Share" in texts and ("See More" in texts or "Like" in texts)
+        n_likes = sum(1 for t in texts if t.endswith("Like"))
+        n_titles = sum(1 for t in texts if len(t) > 25)
+        return n_likes >= 2 and n_titles >= 2
 
     def read_article(self, dwell):
         end = time.time() + dwell
