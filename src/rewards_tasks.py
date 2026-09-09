@@ -1,5 +1,6 @@
 import os
 import random
+import sys
 import time
 from typing import Callable
 from selenium import webdriver
@@ -381,6 +382,24 @@ class RewardsTaskUtils:
 		except TimeoutException:
 			print("[WARNING] Could not find the 'Claim Bonus Points' button. There are likely no bonus points to claim at this time.")
 
+	def verify_signed_in(self) -> int:
+		"""Login probe for provisioning web profiles: the signed-in Rewards page
+		renders the earn tab; a logged-out one redirects to the sign-in wall.
+		Exit codes (like the mobile factory probe): 0 signed in, 2 wall/failure."""
+		url = self.driver.current_url.lower()
+		if "account.microsoft.com" in url or "login.live" in url or "signin" in url:
+			print(f"[ACTION] login_check [redirected to sign-in: {url}] trigger=verify_signed_in")
+			print("state=wall")
+			return 2
+		try:
+			self.wait_for_element(self.elements.get_earn_tab, timeout=60)
+		except TimeoutException:
+			print(f"[ACTION] login_check [earn tab never rendered at {self.driver.current_url}] trigger=verify_signed_in")
+			print("state=wall")
+			return 2
+		print("state=signed_in")
+		return 0
+
 	def complete_all_tasks(self):
 		# Each task is run independently. The Rewards UI differs by market and
 		# changes between deploys, so a task the current variant does not ship
@@ -395,9 +414,14 @@ class RewardsTaskUtils:
 		)
 
 		requested_task = os.environ.get("REWARDS_TASK", "all").strip().lower()
+
+		# 'login_check' is a provisioning probe, not a Rewards activity: it never
+		# joins the 'all' flow and reports its state through the exit code.
+		if requested_task == "login_check":
+			sys.exit(self.verify_signed_in())
+
 		task_aliases = {
 			"all": "all",
-			"daily_set": "Bing daily set",
 			"bing_daily_set": "Bing daily set",
 			"explore": "Explore on Bing",
 			"explore_on_bing": "Explore on Bing",

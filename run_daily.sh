@@ -1,23 +1,13 @@
 #!/usr/bin/env bash
+# Full daily web flow. Was server-only until 2026-09-09 (prod cron entrypoint);
+# now tracked. Profile argument: 'default' keeps the historical edge-profile dir;
+# a named profile mounts edge-profiles/<name> (registry: profiles/README.md).
 set -euo pipefail
-
-TASK="${1:-}"
-PROFILE="${2:-default}"
-if [ -z "$TASK" ]; then
-  echo "Usage: ./run_task.sh <task> [profile]"
-  echo "Tasks: daily_set, explore_on_bing, visual_search, misc_cards, required_searches, bonus_points, all"
-  echo "Profiles: default (= ~/rewards-farmer-main/edge-profile) or a name under edge-profiles/ (registry: profiles/README.md)"
-  exit 1
-fi
-
+PROFILE="${1:-default}"
 ROOT="$HOME/rewards-farmer-main"
 LOG_DIR="$ROOT/logs"
-IMAGE="rewards-farmer-main-rewards-farmer:latest"
 mkdir -p "$LOG_DIR"
 
-# Web credential profiles are separate user-data-dir volumes (one Microsoft account
-# each). 'default' is the historical edge-profile dir; named profiles live under
-# edge-profiles/<name> and mount at the same /data/edge-profile path in the image.
 case "$PROFILE" in
   default) PROFILE_DIR="$ROOT/edge-profile"; SUFFIX="" ;;
   *)       PROFILE_DIR="$ROOT/edge-profiles/$PROFILE"; SUFFIX="-$PROFILE" ;;
@@ -28,45 +18,34 @@ if [ ! -d "$PROFILE_DIR" ]; then
 fi
 
 TS="$(date +%Y%m%d-%H%M%S)"
-LOG_FILE="$LOG_DIR/web-run-${TASK}${SUFFIX}-${TS}.log"
-EXTRA_ENV=()
+LOG_FILE="$LOG_DIR/web-run${SUFFIX}-$TS.log"
 
-if [ -n "${VISUAL_SEARCH_RUNS:-}" ]; then
-  EXTRA_ENV+=(-e "VISUAL_SEARCH_RUNS=${VISUAL_SEARCH_RUNS}")
-fi
-
-if [ -n "${REQUIRED_SEARCH_RUNS:-}" ]; then
-  EXTRA_ENV+=(-e "REQUIRED_SEARCH_RUNS=${REQUIRED_SEARCH_RUNS}")
-fi
-
-# Ensure no other container keeps profile locks.
+# Ensure no other container holds the Edge profile directory lock.
 docker rm -f exciting_mayer rewards-web-once >/dev/null 2>&1 || true
-ids=$(docker ps -aq --filter ancestor="$IMAGE")
+ids=$(docker ps -aq --filter ancestor=rewards-farmer-main-rewards-farmer:latest)
 if [ -n "$ids" ]; then
   docker rm -f $ids >/dev/null 2>&1 || true
 fi
 
 LOCK_CLEANUP='rm -f /data/edge-profile/SingletonLock /data/edge-profile/SingletonCookie /data/edge-profile/SingletonSocket && find /data/edge-profile -maxdepth 2 -name "Singleton*" -exec rm -f {} +'
 
-# Remove stale Chromium singleton locks.
+# Remove stale Chromium lock artifacts in profile (container runs as root).
 docker run --rm --entrypoint /bin/bash \
   -v "$PROFILE_DIR:/data/edge-profile" \
-  "$IMAGE" \
+  rewards-farmer-main-rewards-farmer:latest \
   -lc "$LOCK_CLEANUP" >/dev/null 2>&1 || true
 
+# Hard timeout protects cron from hanging on terminal input waits.
 set +e
 timeout --signal=TERM 1800 docker run --rm --name rewards-web-once \
   -e RUN_AUTOMATION=1 \
   -e START_EDGE_ON_BOOT=0 \
-  -e REWARDS_TASK="$TASK" \
-  "${EXTRA_ENV[@]}" \
   -v "$PROFILE_DIR:/data/edge-profile" \
   -v "$ROOT/src/rewards_tasks.py:/app/src/rewards_tasks.py:ro" \
-  "$IMAGE" \
+  rewards-farmer-main-rewards-farmer:latest \
   >> "$LOG_FILE" 2>&1
 status=$?
 set -e
 
 docker rm -f rewards-web-once >/dev/null 2>&1 || true
-echo "Log: $LOG_FILE"
 exit $status
