@@ -15,7 +15,7 @@ import json, os, re, sys, time
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src"))
 from bing_mobile_flow import BingMobileFlow  # noqa: E402
 
-SERIAL = "127.0.0.1:15555"
+SERIAL = os.environ.get("BING_SERIAL", "127.0.0.1:5555")
 PROFILE = "domena3-prod"
 SCROLLS = 12          # walk depth down the Rewards page
 SETTLE = 2.2          # after each scroll
