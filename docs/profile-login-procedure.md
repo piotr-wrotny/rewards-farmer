@@ -41,6 +41,42 @@ session, the driver's home ready-check (back-recovery loop) handles it; don't tr
 "Microsoft Rewards missing" abort until a fresh launch confirms it — profile-menu taps
 can fire before the menu layer renders.
 
+### 1b. Variant-direct login (d3 path, 2026-09-09) — alternative to §1
+
+Used when the variant volume already exists (seeded from factory per
+`docs/re-droid-gotchas.md` §7) and login happens DIRECTLY on the variant, not on
+factory. Trade-off: skips factory.ps1 save-gate, so the agent MUST take a manual
+safety snapshot right after login.
+
+1. Agent: seed volume + `./bing.sh use <p>` (port 5555), open Bing, tap the
+   profile button (`bing_mobile_flow --only screenshot` opens home; one
+   `sa_profile_button` tap opens the sign-in surface).
+2. Operator — two terminals:
+   ```
+   # T1 (tunnel, keep open during login):
+   ssh -N -L 15555:127.0.0.1:5555 piotr.wrotny@10.17.103.115
+   # T2 (device window; adb connect FIRST or scrcpy sees nothing):
+   bin\platform-tools\adb.exe connect 127.0.0.1:15555
+   bin\scrcpy\scrcpy.exe -s 127.0.0.1:15555
+   ```
+3. Operator signs in, then says done AND CLOSES THE TUNNEL — the agent keeps
+   working server-side (serial 127.0.0.1:5555), no tunnel needed after login.
+4. AGENT IS HANDS-OFF during login: no adb/flow calls on 15555 (concurrent taps
+   corrupt both the sign-in and the flow). Verify lock-free first:
+   `flock -n /tmp/bing-5555.lock true` (stale probe jobs hold it — `fuser` + `ps`).
+5. Verify TEXTUALLY (not screenshots):
+   `adb -s 127.0.0.1:5555 shell uiautomator dump` → email present + `Total points`,
+   no `Sign in`. (or `./bing.sh run rewards --profile <p> --iters 1`, rc 0, no wall)
+6. **Safety snapshot (variant-direct, NOT bing.sh snapshot — that freezes
+   factory):**
+   ```bash
+   docker stop redroid
+   docker run --rm -v $HOME:/host busybox sh -c \
+     'tar -C /host/redroid-variants/<p> -czf /host/profile-snapshots/<p>-signedin.tar.gz .'
+   tar -tzf ~/profile-snapshots/<p>-signedin.tar.gz | grep -c .   # >1000
+   docker start redroid
+   ```
+
 ## 2. Web login (user types into noVNC)
 
 1. Agent (server): `cd ~/rewards-farmer-main && ./web_login.sh <p>`
