@@ -19,12 +19,15 @@ agent **nie dotyka urządzenia** (żadnych adb/flow) dopóki operator nie napisz
 ## Procedura
 
 ### 1. Seed wolumenu (OPERATOR, na serwerze)
-Źródło ZAWSZE factory volume (nie `test`! nie prod!):
+Źródło: `factory` (gdy kontener factory żyje) **albo** `test` — oba to czyste
+baseline'y Androida; `test` bywa praktyczniejszy (nie wymaga factory-contenera),
+d3 (historia serwera) i d4 (2026-09-09) seedowane z `test` bez zarzutu:
 ```bash
 sudo mkdir -p ~/redroid-variants/<profil>
-sudo chown <login-user> ~/redroid-variants/<profil>     # pusty katalog: bezpieczne
-sudo cp -a ~/redroid-variants/factory/. ~/redroid-variants/<profil>/
+sudo chown -R 1000:1000 ~/redroid-variants/<profil>     # pusty katalog: bezpieczne
+sudo cp -a ~/redroid-variants/test/. ~/redroid-variants/<profil>/
 ```
+NIE seedzić z żadnego prod-wolumenu (konta/keystore).
 (`cp -a` zachowuje uid-y Androida — keystore 1017 itd. NIGDY chown wewnątrz.)
 
 ### 2. Start kontenera (AGENT)
