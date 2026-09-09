@@ -939,7 +939,7 @@ def main():
                    help="profile variant (test|prod_1|prod_2|...); evidence -> artifacts/<profile>/")
     p.add_argument("--only", default="full",
                    choices=("full", "search", "rewards", "read-to-earn", "misc-cards",
-                            "required-searches", "screenshot"))
+                            "required-searches", "daily", "screenshot"))
     p.add_argument("--debug", action=argparse.BooleanOptionalAction, default=None,
                    help="screenshot every executed action (default: on for profile=test)")
     p.add_argument("--clear", action="store_true",
