@@ -882,35 +882,98 @@ class BingMobileFlow:
         return self.rewards_tail(iterations)
 
 
-    def daily_flow(self, search_count=30, rte_max=60):
-        """Full daily chain, benefit-ordered (cheapest-first), each stage with its
-        own benefit signal and balance readouts before/after:
-          1. misc-cards  — pool drain (terminal: pool exhausted)
-          2. read-to-earn — session model (terminal: card 'done')
-          3. required-searches — capped by search_count (benefit check pending a
-             fresh profile: mobile search credit unverified, see
-             docs/ideas/2026-09-09-mobile-daily-flow-d2.md)
-        Search last: highest noise (30 SERP opens), and its credit is the one
-        category not yet proven on mobile."""
+    # ---- tile-driven daily state machine (d3, 2026-09-09) -------------------
+    # Every stage is driven by a Rewards TILE state, not a fixed counter. The
+    # driver re-reads the Rewards page each round and acts ONLY on tiles whose
+    # done-signal is absent (user directive: recognize "tile needs nothing").
+    # Live desc formats (d3 2026-09-09 inventory, note the ", , " double comma):
+    #   Search to earn, , 0 out of 15 points earned   -> active, done 0/15
+    #   Read to earn, , 0 out of 30 points earned     -> active, done 0/30
+    #   Search to earn, , 15 points earned            -> done (no 'out of')
+    TILE_SEARCH = re.compile(r'content-desc="Search to earn, , (\d+) out of (\d+)')
+    TILE_RTE = re.compile(r'content-desc="Read to earn, , (\d+) out of (\d+)')
+    TILE_SEARCH_DONE = re.compile(r'content-desc="Search to earn, , (\d+) points earned"')
+
+    def read_tiles(self):
+        """Tile snapshot from the CURRENT hierarchy. rendered=False when the
+        lazy WebView shows no balance rows — a blank render is NEVER terminal."""
+        xml = self.d.dump_hierarchy()
+        rendered = TOTAL_POINTS.search(xml) is not None or DAILY_POINTS.search(xml) is not None
+        t = {"search": None, "rte": None, "cards": 0, "checkin": False,
+             "rendered": rendered}
+        m = self.TILE_SEARCH.search(xml) or self.TILE_SEARCH_DONE.search(xml)
+        if m:
+            if "out of" in m.group(0):
+                t["search"] = (int(m.group(1)), int(m.group(2)))
+            else:
+                v = int(m.group(1)); t["search"] = (v, v)
+        m = self.TILE_RTE.search(xml)
+        if m:
+            t["rte"] = (int(m.group(1)), int(m.group(2)))
+        t["cards"] = len(ACTIVITY_CARD.findall(xml))
+        t["checkin"] = CHECKED_ICON.search(xml) is None and \
+            ('text="' + CHECKIN_TEXT + '"') in xml
+        return t
+
+    def all_terminal(self, tiles):
+        """True ONLY on a rendered page where every tile shows its done-signal."""
+        if not tiles.get("rendered"):
+            return False
+        search_done = tiles["search"] is None or tiles["search"][0] >= tiles["search"][1]
+        rte_done = tiles["rte"] is None or tiles["rte"][0] >= tiles["rte"][1]
+        return search_done and rte_done and tiles["cards"] == 0 and not tiles["checkin"]
+
+    def daily_flow(self, rte_max=60, search_safety_cap=10, max_rounds=6):
+        """Tile-driven daily chain: loop { read tiles -> act ONLY on active tiles
+        -> re-read balance }. Stage order per round (cheapest-first): check-in ->
+        pool cards -> read-to-earn -> searches (search LAST: 15 pts = 5 SERPs;
+        d3 2026-09-09: 3 SERP = +9 pts CONFIRMED on fresh account). A full round
+        with zero point delta = saturated account -> stop regardless of tiles."""
         def _points():
             try:
                 return self.daily_points()
-            except Exception as e:  # noqa: BLE001 — readout must not fail the chain
+            except Exception as e:  # noqa: BLE001
                 log(f"daily_points readout failed: {type(e).__name__}: {e}")
                 return None
 
-        results = {}
+        results = {"rounds": []}
         p0 = _points()
         log(f"daily: start daily_points={p0}")
-        results["misc_cards"] = self.misc_cards_flow()
-        results["read_to_earn"] = self.read_to_earn_flow(max_total=rte_max)
-        results["required_searches"] = self.required_searches(count=search_count)
+        prev_points = p0
+        for rnd in range(1, max_rounds + 1):
+            if not self.open_rewards():
+                self.shot("rewards-page-unexpected")
+                log(f"round {rnd}: rewards page unreachable — stopping")
+                break
+            tiles = self.read_tiles()
+            log(f"round {rnd}: tiles={tiles}")
+            if self.all_terminal(tiles):
+                log(f"round {rnd}: ALL TILES TERMINAL — done")
+                break
+            rr = {}
+            if tiles["checkin"]:
+                rr["checkin"] = self.check_in()
+            if tiles["cards"]:
+                rr["cards"] = self.misc_cards()
+            if tiles["rte"] and tiles["rte"][0] < tiles["rte"][1]:
+                rr["rte"] = self.read_to_earn_flow(
+                    max_total=min(rte_max, tiles["rte"][1] - tiles["rte"][0]))
+            if tiles["search"] and tiles["search"][0] < tiles["search"][1]:
+                cap = min(search_safety_cap, tiles["search"][1] - tiles["search"][0])
+                rr["searches"] = self.required_searches(count=max(1, cap // 3))
+            results["rounds"].append(rr)
+            pts = _points()
+            log(f"round {rnd}: points {prev_points} -> {pts}")
+            if pts is not None and pts == prev_points and rnd > 1:
+                log(f"round {rnd}: ZERO delta across the round — saturated, stopping")
+                break
+            prev_points = pts
         p1 = _points()
         results["daily_points"] = {"start": p0, "end": p1}
         log(f"daily: end daily_points={p0}->{p1}")
         return {"state": "daily_done", "articles_read":
-                sum(r.get("articles_read", 0) for r in results.values()
-                    if isinstance(r, dict)), **results}
+                sum(r.get("rte", {}).get("articles_read", 0)
+                    for r in results["rounds"] if isinstance(r, dict)), **results}
 
 def check_serial(serial):
     """Make sure adb sees the ReDroid serial (tunnel port must be forwarded already)."""
