@@ -73,3 +73,36 @@ will resolve.
 15 searches inside the daily chain took ~6.5 min → ~26 s/search (down from
 32 s standalone; misc/RTE fast-paths help). Still above the 8–15 s target —
 trim SERP settle 5 s → 3 s and dwell 5-6 s → 3-4 s next pass.
+
+## HANDOVER → domena3-prod rebuild (user directive 2026-09-09 evening)
+
+**Decision: d2 flow is NOT the truth. The full path gets re-derived from zero on
+a fresh domena3-prod (local redroid). d2 will be run later with the flow proven
+on d3.**
+
+### Core design principle (user directive)
+**Every flow stage must be driven by a Rewards TILES state, not a hardcoded
+sequence.** Each stage exists because a tile offers points; the driver must
+recognize "this tile no longer needs interaction" and skip it — never repeat
+an action past its benefit.
+
+### Tile → stage → completion-signal map (draft from d2 experience, to verify on d3)
+
+| Rewards tile | Stage | Completion signal (no interaction needed when true) |
+|---|---|---|
+| Streak check-in card | `check_in` | `checked` alt-text icon present (day ring) — on d2 fresh account button was INERT (needs maturity, §7) |
+| 'earn N points' pool cards | `misc_cards` | card's content-desc loses the `earn N points` suffix (verified, §1) |
+| Read-to-earn card | `read_to_earn` | desc `Read to earn, N points earned` (no 'out of') = done state (verified) |
+| Search category | `required_searches` | **UNRESOLVED on d2** — 30 SERPs gave 0 delta. On d3: baseline → 3 searches → re-read → web cross-check (protocol above). Until proven: cap by probe, not count |
+| Daily set panel | NOT needed on mobile (§8) — dailies stack into misc pool automatically. Verify on d3 whether the widget even exists / behaves |
+| Quiz/puzzle tiles | not yet mapped on mobile — d3 walk will reveal |
+
+### Infra facts for d3 (local redroid on Windows)
+- Server bing.sh is Linux-bound (docker volume paths under ~/redroid-variants).
+  Local Windows redroid needs its own compose/run with same DNS props
+  (`androidboot.redroid_net_ndns=2` REQUIRED, publish only 5555).
+- The d2 evidence stands (this file + docs/bing-mobile-flow.md § daily chain);
+  d3 work supersedes the d2-built `daily` chain order only if the tile map
+  differs. The d2 run stays as regression reference.
+- Tunnel job (bg_24) died on connection reset after ~80 min — irrelevant now,
+  d3 is local (serial 127.0.0.1:5555 directly).
