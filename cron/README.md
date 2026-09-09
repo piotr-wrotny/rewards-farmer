@@ -8,15 +8,29 @@ to `~/crontab.backup-<ts>`):
 
 ```cron
 30 1 * * * /home/piotr.wrotny/rewards-farmer-main/run_daily.sh >/dev/null 2>&1
-45 1 * * * /home/piotr.wrotny/rewards-farmer-main/bing.sh run read-to-earn --profile prod_1 --iters 60 >> /home/piotr.wrotny/rewards-farmer-main/logs/cron.log 2>&1
-0 2 * * * /home/piotr.wrotny/rewards-farmer-main/bing.sh run read-to-earn --profile domena1-prod --iters 60 >> /home/piotr.wrotny/rewards-farmer-main/logs/cron.log 2>&1
 0 2 * * * /home/piotr.wrotny/rewards-farmer-main/run_daily.sh domena1-prod >> /home/piotr.wrotny/rewards-farmer-main/logs/cron.log 2>&1
+15 1 * * * /home/piotr.wrotny/rewards-farmer-main/bing.sh run daily --profile prod_1 --no-debug >> /home/piotr.wrotny/rewards-farmer-main/logs/cron.log 2>&1
+15 3 * * * /home/piotr.wrotny/rewards-farmer-main/bing.sh run daily --profile domena1-prod --no-debug >> /home/piotr.wrotny/rewards-farmer-main/logs/cron.log 2>&1
+15 5 * * * /home/piotr.wrotny/rewards-farmer-main/bing.sh run daily --profile domena2-prod --no-debug >> /home/piotr.wrotny/rewards-farmer-main/logs/cron.log 2>&1
+15 7 * * * /home/piotr.wrotny/rewards-farmer-main/bing.sh run daily --profile domena3-prod --no-debug >> /home/piotr.wrotny/rewards-farmer-main/logs/cron.log 2>&1
+15 9 * * * /home/piotr.wrotny/rewards-farmer-main/bing.sh run daily --profile domena4-prod --no-debug >> /home/piotr.wrotny/rewards-farmer-main/logs/cron.log 2>&1
 ```
 
-Schedule shape: `prod_1` = web 01:30 + mobile 01:45; `domena1-prod` = web + mobile
-both 02:00. Interactions that are SAFE BY DESIGN: the two mobile 02:00-bound runs
-serialise on flock `/tmp/bing-5555.lock` (prod_1 at 01:45 with 60 articles runs
-≈ 35 min, so domena1-prod may start ≈ 02:20 — the flock queues, never corrupts).
+Mobile lines replaced the old per-task `read-to-earn --iters 60` pair (2026-09-09 night):
+`bing.sh run daily` IS the whole day (tile-driven state machine: check-in → cards →
+RTE → searches, benefit-driven termination; `--iters` intentionally not passed).
+Fixed slots every 2 h starting 01:15 (owner decision over chaining-with-5-min-gap:
+flock `/tmp/bing-5555.lock` already serialises overlaps safely, fixed slots keep
+runtime predictable; measured worst case ≈ 25 min clean-slate, ≈ 5-10 min mature).
+Scale note: at 12 domains + prod_1, a 2 h cadence fills the day exactly — raise
+buffer or split web/mobile windows before profile #10. RESET-WINDOW CAVEAT: d3's
+daily quota was observed resetting ~02:38 local; the 01:15 prod_1 slot may farm the
+PREVIOUS day's tail on some accounts (tile-driven run is harmless either way —
+it just stops at that day's terminal state). Watch first cron.log, move later if needed.
+
+Schedule shape: web stays `default` 01:30 + `domena1-prod` 02:00; mobile daily runs
+at 01:15/03:15/05:15/07:15/09:15. Mobile runs serialise on flock
+`/tmp/bing-5555.lock` (queues, never corrupts).
 RISK to keep an eye on: web `default` (01:30, hard timeout 30 min) and web
 domena1-prod (02:00) share one image and `run_daily.sh` KILLS all image containers
 before starting — a default run still alive at 02:00 gets terminated mid-flight.
