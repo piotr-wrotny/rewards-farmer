@@ -48,3 +48,28 @@ on fresh profile.
   AIToolsSuggestActivity/MSN — home search box not addressable there; tunnel
   pilot 2026-09-09), CLI choice `required-searches`, `--iters` = count.
 - misc_cards on d2 at 53/75: pool still pays (1 card +10 credited 16:02).
+
+## Full `daily` e2e on domena2-prod (16:39→16:52, rc 0, 13.6 min)
+
+`--only daily --iters 15` (misc-cards → read-to-earn → 15 searches):
+
+| Stage | Result | Points |
+|---|---|---|
+| misc-cards | pool drained: 0 cards left, `points_credited=0` (pool exhausted this day) | — |
+| read-to-earn | `state=done` — terminal, skipped cleanly (benefit signal worked) | — |
+| required-searches | 15/15 SERPs, 15 tabs closed in cleanup | 0 delta |
+| Balance | `65/75 → 65/75` — account saturated for the day | — |
+
+Key proof: every stage correctly hit its **terminal/benefit state** instead of
+burning timeouts — misc pool empty, RTE `done`, searches capped by count. The
+chain is idempotent-safe to re-run.
+
+Remaining 10/75 daily pts on d2: presumably the search category (uncredited on
+mobile here — see OPEN above) or days' quiz cards. Fresh-profile verification
+will resolve.
+
+## Cadence measured (16:39→16:52 daily run)
+
+15 searches inside the daily chain took ~6.5 min → ~26 s/search (down from
+32 s standalone; misc/RTE fast-paths help). Still above the 8–15 s target —
+trim SERP settle 5 s → 3 s and dwell 5-6 s → 3-4 s next pass.

@@ -134,6 +134,23 @@ the driver relies on:
    any explored point (text/CTA/strip) — its activities are the same SERP-style cards;
    the web flow's daily-set port is NOT needed for those points.
 
+### Required searches + full daily chain (2026-09-09, `mobile-daily-flow-d2`)
+
+`--only required-searches --iters N` (default 30) and `--only daily` (misc-cards →
+read-to-earn → N searches, balance readouts before/after) — verified on
+domena2-prod:
+
+| Claim | Evidence |
+|---|---|
+| 30/30 searches, unique pool sample, tab cleanup | `daily` run 16:39 rc 0; cleanup closed 15/30 tabs |
+| Per-iteration `ensure_home()` REQUIRED | back from SERP can rest on `AIToolsSuggestActivity`/MSN — home `sa_search_box` not addressable there (pilot crash 15:55) |
+| Age-less RTE feed | `Showbizz Daily`-style cards have NO age node; source-name 30–60 px below title top + Like/Share/See More anatomy = feed signal (`feed_visible`/`candidate_articles` extended; unit-tested against saved dumps, 20 ageless dumps yield candidates) |
+| `daily` chain benefit-terminal | d2 run: misc pool empty → 0 cards, RTE `done` → skip, searches 15/15; `65/75 → 65/75` — no timeouts burned on saturated categories |
+| Search credit on mobile UNVERIFIED | 30 searches → 0 delta on d2 (53/75 before/after); protocol in `docs/ideas/2026-09-09-mobile-daily-flow-d2.md` — needs fresh profile |
+
+Cadence ~26 s/search (target 8–15 s; trim SERP settle + dwell next pass).
+Search runs LAST in the chain: highest noise, credit unproven.
+
 ## Test path vs production path
 
 | | Test path (`test`) | Production path (`prod_N`) |
