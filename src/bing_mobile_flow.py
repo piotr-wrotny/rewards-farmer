@@ -87,9 +87,10 @@ CHECKIN_TEXT = "Check in"
 CHECKED_ICON = re.compile(r'text="checked"')  # filled Day-1 ring = checked in today
 TOTAL_POINTS = re.compile(r'text="([\d,]+)"[^>]*>\s*<node[^>]*text="Total points"')
 DAILY_POINTS = re.compile(r'text="(\d+/\d+)"[^>]*>\s*<node[^>]*text="Daily points"')
-# Rewards PAGE balance header (profile menu has 'Daily points'; the page itself
-# labels it "Today's points" with an N/M pill — d3 dumps 2026-09-09 19:06)
-REWARDS_HEADER = re.compile(r"Today's points|text=\"\d+/\d+\"")
+# Rewards PAGE balance header. d3 (2026-09-09 19:06): "Today's points" + N/M
+# pill; d2 (19:44): total pill only ('text="107"' + 'text="pts"'). Either proves
+# the lazy WebView rendered — profile menu never shows 'pts' standalone rows.
+REWARDS_HEADER = re.compile(r"Today's points|text=\"\d+/\d+\"|text=\"pts\"")
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ART_DIR = os.path.join(ROOT, "artifacts")  # artifacts/<profile>/{screenshots,ui}
