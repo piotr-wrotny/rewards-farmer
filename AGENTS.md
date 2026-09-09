@@ -25,6 +25,7 @@ Web credential profiles are one Microsoft account per Edge user-data-dir: `defau
 - `./run_bonus_points.sh [profile]` — runs `bonus_points`.
 - `./web_login.sh <profile> [novnc-port]` — provision a web profile: login-mode
   container + noVNC; user signs in by hand; then `./run_task.sh login_check <profile>`.
+  Full new-profile procedure: `docs/profile-login-procedure.md`.
 
 Supported `<task>` values:
 
@@ -87,9 +88,10 @@ One entrypoint, interactive and cron alike (runs ON the server, `~/rewards-farme
 ```
 
 Profiles are named credential variants (`profiles/README.md` is the registry): `test` =
-logged-out (pm clear allowed), `prod_N` = signed-in (never cleared). Driver-level usage
-(from the Windows dev machine, tunnel `ssh -N -L 15555:127.0.0.1:5555`, serial
-`127.0.0.1:15555`): `python src/bing_mobile_flow.py --profile P --only ACTION`.
+logged-out (pm clear allowed), `prod_N`/named prod = signed-in (never cleared).
+Step-by-step provisioning (web+mobile, user logins): `docs/profile-login-procedure.md`.
+Driver-level usage (from the Windows dev machine, tunnel `ssh -N -L 15555:127.0.0.1:5555`,
+serial `127.0.0.1:15555`): `python src/bing_mobile_flow.py --profile P --only ACTION`.
 
 - Evidence: `artifacts/<profile>/screenshots/` (+ `ui/`); `--debug` adds a screenshot per executed action (default: on for `test`).
 - Exit codes: 0 ok (incl. terminal wall/done), 2 flow failure, 3 infra; `--clear` on a prod profile exits 3 (would log the account out).
