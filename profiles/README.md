@@ -28,7 +28,7 @@ ssh piotr.wrotny@10.17.103.115 'p=<name>; docker run --rm -v /home/piotr.wrotny:
 | domena6-prod | signed-in | domena-6@agregat-streszczen.pl (CONFIRMED dumpem) | `domena6-prod-signedin.tar.gz` (4414 entries, 2026-09-12 17:00) | PROVISIONED 2026-09-12 variant-direct (seed z `test`): login VERIFIED TEXTUALLY (email + `Total points`, no wall), gate `bing.sh run rewards --iters 0` rc 0 state=rte (day-0 fresh) |
 | domena7-prod | signed-in | domena-7@agregat-streszczen.pl (CONFIRMED dumpem) | `domena7-prod-signedin.tar.gz` (4373 entries, 2026-09-12 17:07) | PROVISIONED 2026-09-12 variant-direct (seed z `test`): login VERIFIED TEXTUALLY (email + `Total points`, no wall), gate `bing.sh run rewards --iters 0` rc 0 state=rte (day-0 fresh) |
 | domena8-prod | signed-in | domena-8@agregat-streszczen.pl (CONFIRMED dumpem) | `domena8-prod-signedin.tar.gz` (4360 entries, 2026-09-12 17:14) | PROVISIONED 2026-09-12 variant-direct (seed z `test`): login VERIFIED TEXTUALLY (email + `Total points`, no wall), gate `bing.sh run rewards --iters 0` rc 0 state=rte (day-0 fresh) |
-| domena9-prod | pending | domena-9@agregat-streszczen.pl (tbp) | — | SEEDED 2026-09-12 from `test`; login PENDING |
+| domena9-prod | pending | domena-9@agregat-streszczen.pl (tbp) | — | SEEDED 2026-09-12 from `test`; login DEFERRED by owner 2026-09-12 (wolumin gotowy; procedura = docs/profile-provisioning-mobile.md) |
 | domena10-prod | pending | domena-10@agregat-streszczen.pl (tbp) | — | SEEDED 2026-09-12 from `test`; login PENDING |
 | domena11-prod | pending | domena-11@agregat-streszczen.pl (tbp) | — | SEEDED 2026-09-12 from `test`; login PENDING |
 | domena12-prod | pending | domena-12@agregat-streszczen.pl (tbp) | — | SEEDED 2026-09-12 from `test`; login PENDING |
