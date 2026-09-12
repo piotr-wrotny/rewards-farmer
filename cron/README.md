@@ -14,6 +14,8 @@ to `~/crontab.backup-<ts>`):
 15 5 * * * /home/piotr.wrotny/rewards-farmer-main/bing.sh run daily --profile domena2-prod --no-debug >> /home/piotr.wrotny/rewards-farmer-main/logs/cron.log 2>&1
 15 7 * * * /home/piotr.wrotny/rewards-farmer-main/bing.sh run daily --profile domena3-prod --no-debug >> /home/piotr.wrotny/rewards-farmer-main/logs/cron.log 2>&1
 15 9 * * * /home/piotr.wrotny/rewards-farmer-main/bing.sh run daily --profile domena4-prod --no-debug >> /home/piotr.wrotny/rewards-farmer-main/logs/cron.log 2>&1
+15 11 * * * /home/piotr.wrotny/rewards-farmer-main/bing.sh run daily --profile domena5-prod --no-debug >> /home/piotr.wrotny/rewards-farmer-main/logs/cron.log 2>&1
+15 13 * * * /home/piotr.wrotny/rewards-farmer-main/bing.sh run daily --profile domena6-prod --no-debug >> /home/piotr.wrotny/rewards-farmer-main/logs/cron.log 2>&1
 ```
 
 Mobile lines replaced the old per-task `read-to-earn --iters 60` pair (2026-09-09 night):
@@ -44,15 +46,14 @@ Proposed, NOT installed: a `prod_2` read-to-earn line (stagger so flock
 # 0 6 * * * /home/piotr.wrotny/rewards-farmer-main/bing.sh run read-to-earn --profile prod_2 --iters 60 >> /home/piotr.wrotny/rewards-farmer-main/logs/cron.log 2>&1
 ```
 
-Proposed for d5–d12 (branch `add-profiles-domena5-12`), NOT installed until each
-profile passes the login gate. The 2 h grid from 01:15 leaves EXACTLY 7 free slots
-(11:15…23:15 odd hours) for 8 profiles — d12 takes 00:15 (grid-consistent; RESET-WINDOW
-caveat above applies: quota is midnight-UTC, 00:15 CEST = 22:15 UTC previous day, so the
-run farms that day's fresh quota; tile-driven termination makes any overlap harmless):
+Proposed for d7–d12 (branch `add-profiles-domena5-12`), installed one-by-one as each
+profile passes the login gate (d5 11:15 + d6 13:15 INSTALLED 2026-09-12, see block above;
+crontab backed up first). The 2 h grid from 01:15 leaves slots 15:15…23:15 + 00:15 —
+d12 takes 00:15 (grid-consistent; RESET-WINDOW caveat above applies: quota is
+midnight-UTC, 00:15 CEST = 22:15 UTC previous day, so the run farms that day's fresh
+quota; tile-driven termination makes any overlap harmless):
 
 ```cron
-# 15 11 * * * /home/piotr.wrotny/rewards-farmer-main/bing.sh run daily --profile domena5-prod --no-debug >> /home/piotr.wrotny/rewards-farmer-main/logs/cron.log 2>&1
-# 15 13 * * * /home/piotr.wrotny/rewards-farmer-main/bing.sh run daily --profile domena6-prod --no-debug >> /home/piotr.wrotny/rewards-farmer-main/logs/cron.log 2>&1
 # 15 15 * * * /home/piotr.wrotny/rewards-farmer-main/bing.sh run daily --profile domena7-prod --no-debug >> /home/piotr.wrotny/rewards-farmer-main/logs/cron.log 2>&1
 # 15 17 * * * /home/piotr.wrotny/rewards-farmer-main/bing.sh run daily --profile domena8-prod --no-debug >> /home/piotr.wrotny/rewards-farmer-main/logs/cron.log 2>&1
 # 15 19 * * * /home/piotr.wrotny/rewards-farmer-main/bing.sh run daily --profile domena9-prod --no-debug >> /home/piotr.wrotny/rewards-farmer-main/logs/cron.log 2>&1
