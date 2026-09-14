@@ -29,15 +29,17 @@ fi
 [ -f "$PROFILE_DIR/visual-search-asset.jpg" ] || \
   cp "$ROOT/visual-search-asset.jpg" "$PROFILE_DIR/visual-search-asset.jpg" 2>/dev/null || true
 
-# Same lock hygiene as run_task.sh: never share the volume with an automation run.
-docker rm -f exciting_mayer rewards-web-once rewards-web-login >/dev/null 2>&1 || true
+# Never share a volume with an automation run; never STEAL another profile's login
+# container either: only this profile's stale login container is removed, any other
+# running rewards-farmer container hits the refuse below (one login at a time).
+docker rm -f "rewards-web-login-$PROFILE" >/dev/null 2>&1 || true
 ids=$(docker ps -aq --filter ancestor="$IMAGE")
 if [ -n "$ids" ]; then
   echo "refusing: a rewards-farmer container is running (would steal the profile lock)" >&2
   exit 3
 fi
 
-docker run -d --name rewards-web-login \
+docker run -d --name "rewards-web-login-$PROFILE" \
   -e START_EDGE_ON_BOOT=1 -e RUN_AUTOMATION=0 \
   -e EDGE_USER_DATA_DIR=/data/edge-profile \
   -v "$PROFILE_DIR:/data/edge-profile" \
@@ -47,5 +49,5 @@ docker run -d --name rewards-web-login \
 
 echo ">> open http://localhost:$PORT/vnc.html (or ssh -L $PORT:127.0.0.1:$PORT the server first),"
 echo ">> sign into Microsoft account + bing.com + rewards.bing.com inside the browser,"
-echo ">> then stop: docker rm -f rewards-web-login"
+echo ">> then stop: docker rm -f rewards-web-login-$PROFILE"
 echo ">> verify:  ./run_task.sh login_check $PROFILE   (expect rc=0, state=signed_in)"

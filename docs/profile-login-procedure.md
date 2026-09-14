@@ -93,7 +93,8 @@ safety snapshot right after login.
 3. User: inside that Edge, sign in to Microsoft at **bing.com AND rewards.bing.com**
    (both), accept the EU consent banner if shown, confirm the Rewards dashboard shows
    points, then say done.
-4. Agent: `docker rm -f rewards-web-login`, then verify:
+4. Agent: `docker rm -f rewards-web-login-<p>` (per-profile container name — never
+   a bare shared name), then verify:
    `./run_task.sh login_check <p>` → log must end `state=signed_in`, rc 0
    (rc 2 = wall → redo §2.3). Probe = earn-tab renders / no sign-in redirect.
 5. **Prove the account identity, not just the session.** `login_check` passes for
