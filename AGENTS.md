@@ -104,8 +104,8 @@ identity-proven, launches ordered by owner AFTER provisioning (phase 2).
   d2–d11 (NEVER parallel — the ancestor sweep kills concurrent containers); 8×
   4 OK/2 SKIP, d3+d8 failed visual search on a transient driver ReadTimeout, retry
   `run_task.sh visual_search` PASS (composite verdicts in `profiles/README.md`).
-  Cron installation PENDING owner's phase-3 decision (activation slots + mobile
-  ordering are a joint call; existing 01:30/02:00/03:30 lines untouched so far).
+  Cron ACTIVE since 2026-09-14 (owner: put the verified build in cron): d2–d11
+  installed hourly 04:30→13:30, backup `~/crontab.backup-20260914-204513`.
 - Provision recipe (proven 10× same day): fresh `./web_login.sh <p>` container (name
   `rewards-web-login-<p>`), user logs in via noVNC, agent greps `Web Data` for the
   registry email (login_check alone is account-blind — the d1-into-d2 incident),

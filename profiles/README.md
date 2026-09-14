@@ -15,13 +15,17 @@ credentials) then `factory.ps1 save <name>`. New variant from snapshot:
 ssh piotr.wrotny@10.17.103.115 'p=<name>; docker run --rm -v /home/piotr.wrotny:/host busybox sh -c "mkdir -p /host/redroid-variants/$p && tar -C /host/redroid-variants/$p -xzf /host/profile-snapshots/$p.tar.gz" && cd ~/rewards-farmer-main && ./bing.sh use $p'
 ```
 
-## Cron grid (mobile, jedyna prawda dla harmonogramu — zainstalowane 2026-09-14)
+## Cron grid (mobile + web, jedyna prawda dla harmonogramu — stan 2026-09-14)
 
 13 profili signed-in, równy krok **110 min** od 01:10, backup starego crontabu:
 `/tmp/crontab.bak.20260914-110915`. Run `daily` 16–26 min → bufor ≥80 min; ostatni
-start 23:10, pauza nocna 120 min. Web-linie (`run_daily.sh`): 01:30 `default` ·
-02:00 `domena1-prod` · 03:30 `prod_1` (dodana 2026-09-14) — inny subsystem (Edge),
-bez kolizji locka 5555; web-linie nie mogą na siebie nachodzić (kasują kontenery).
+start 23:10, pauza nocna 120 min. **Web-linie (`run_daily.sh`) 13× — pełna siatka po
+fazie 3 (2026-09-14, backup `~/crontab.backup-20260914-204513`):** 01:30 `default` ·
+02:00 d1 · 03:30 prod_1 · 04:30 d2 · 05:30 d3 · 06:30 d4 · 07:30 d5 · 08:30 d6 ·
+09:30 d7 · 10:30 d8 · 11:30 d9 · 12:30 d10 · 13:30 d11 (odstęp 1 h, runy web
+15–24 min → worst-case margines ≥36 min; inny subsystem niż mobile, locka 5555 nie
+dzielą). Kolizje minute-level z mobile (np. web 08:30 d6 vs mobile 08:30 d3) to
+różne konta + różne podsystemy — akceptowane.
 
 `01:10 prod_1 · 03:00 prod_2 · 04:50 d1 · 06:40 d2 · 08:30 d3 · 10:20 d4 ·
 12:10 d5 · 14:00 d6 · 15:50 d7 · 17:40 d8 · 19:30 d9 · 21:20 d10 · 23:10 d11`
@@ -55,8 +59,10 @@ procedura `docs/profile-login-procedure.md` §2). **FAZA 2 ZAKOŃCZONA 2026-09-1
 ALL GREEN (10/10):** sekwencyjny soak `run_daily.sh` d2–d11 — 8×PASS (4 OK/2 SKIP),
 d3+d8 FAIL visual (ReadTimeoutError drivera, akcja 1/30) → retry `run_task.sh
 visual_search` **PASS** (composite: soak-log + retry-log; przejściowe zawieszenie,
-nie problem profilu). Cron NIE instalowany — celowo. **FAZA 3 (wspólna z ownerem):**
-strategia włączania web (sloty) + kolejność mobile flow.
+nie problem profilu). **AKTYWACJA (faza 3) 2026-09-14:** owner zdecydował „stabilna
+wersja w CRON" → 10 linii web 04:30 d2 … 13:30 d11 zainstalowane (siatka w §Cron
+grid; backup `~/crontab.backup-20260914-204513`). Pozostaje omówić: kolejność/
+denskość mobile flow (faza 3b) + los kwarantanny d2 i porzuconego d12.
 
 Wcześniejsza nota mobile-first
 (`docs/ideas/2026-09-09-web-to-mobile-migration.md`) — historyczna.
