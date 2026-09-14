@@ -51,10 +51,12 @@ visual search (file-input) + bonus claim istnieją tylko w web, więc web = wars
 stała, nie fallback. **FAZA 1 (provisioning web) ZAKOŃCZONA 2026-09-14**: prod_1 ✅
 (cron 03:30 live), domena1 ✅ (cron 02:00 live), **d2–d11 ✅ provisioned + verified**
 (każdy: dowód `Web Data` grep + `login_check` rc 0; gałąź `web-profiles-domena1-6`,
-procedura `docs/profile-login-procedure.md` §2). **FAZA 2 (weryfikacja, w toku):**
-sekwencyjny soak `run_daily.sh` d2–d11 — SAME TESTY, cron NIE instalowany przez
-agenta. **FAZA 3 (wspólna z ownerem):** strategia włączania profile web (sloty cron)
-+ kolejność mobile flow.
+procedura `docs/profile-login-procedure.md` §2). **FAZA 2 ZAKOŃCZONA 2026-09-14
+ALL GREEN (10/10):** sekwencyjny soak `run_daily.sh` d2–d11 — 8×PASS (4 OK/2 SKIP),
+d3+d8 FAIL visual (ReadTimeoutError drivera, akcja 1/30) → retry `run_task.sh
+visual_search` **PASS** (composite: soak-log + retry-log; przejściowe zawieszenie,
+nie problem profilu). Cron NIE instalowany — celowo. **FAZA 3 (wspólna z ownerem):**
+strategia włączania web (sloty) + kolejność mobile flow.
 
 Wcześniejsza nota mobile-first
 (`docs/ideas/2026-09-09-web-to-mobile-migration.md`) — historyczna.
