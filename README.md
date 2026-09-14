@@ -2,6 +2,11 @@
 
 Automation for MS Rewards based on [https://youtu.be/4qdPcMNaioA](https://youtu.be/4qdPcMNaioA).
 
+> **Note (2026-09-14):** this readme describes the original upstream web setup and
+> is kept as provenance. The deployed system — a 13-profile mobile Bing Rewards
+> farm (ReDroid + `bing.sh`) with the web flow frozen as fallback — is documented
+> in **`AGENTS.md`** (runbook + live/dead system map). Start there.
+
 # Running Instructions
 
 IMPORTANT: Use at your own risk. Microsoft may take action against your account for using automated scripts to gain rewards points. The YouTube video contains more details about the techniques implemented to avoid detection of this script.

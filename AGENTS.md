@@ -1,100 +1,155 @@
-# Rewards farmer runbook
+# Rewards Farmer — runbook and system map
 
-This project runs on server `piotr.wrotny@10.17.103.115` from `~/rewards-farmer-main`.
+**Status: DELIVERED (2026-09-14). Maintenance only.** The farm runs 13 signed-in
+Microsoft Rewards profiles unattended on the server. No new features are planned;
+changes are limited to breakage fixes and (someday, not now) the points-observer
+idea in `docs/ideas/2026-09-09-points-reader-api.md` — a collector that publishes
+per-profile `daily_points` via an API at the end of each flow. Do not build it
+unless the owner asks.
 
-## Main flow
+Ground rules for any future change:
 
-- `./run_daily.sh [profile]` — full run (all tasks as implemented by
-  `complete_all_tasks`). `profile` defaults to `default`; named profiles mount
-  `~/rewards-farmer-main/edge-profiles/<name>` instead of `edge-profile`.
+- **Never push to `origin`** (`User0332/rewards-farmer`, public — this repo contains
+  account identities and profile data). Push only to `fork`
+  (`piotr-wrotny:piotr-wrotny/rewards-farmer.git`). Branch tracking is set to
+  `fork/main`; keep it that way.
+- The local Windows checkout is the source of truth. The server
+  (`piotr.wrotny@10.17.103.115:~/rewards-farmer-main`) is a deployment target with
+  **no git** — files arrive by `rsync`/`scp` of the changed paths.
+- Tests (manual, no CI exists): `py -3 -m pytest tests/ -q` on Windows (the hermes
+  venv python lacks pytest), `bash tests/test_bing.sh` for the `bing.sh` guards.
 
-## Task-specific flows
+## How the system works today
 
-All scripts below clear singleton locks and write logs to `~/rewards-farmer-main/logs`.
-Web credential profiles are one Microsoft account per Edge user-data-dir: `default`
-= `~/rewards-farmer-main/edge-profile`, named = `edge-profiles/<name>` (registry:
-`profiles/README.md`). Pass the profile as `$1` to the one-liners (or env
-`WEB_PROFILE`); `run_task.sh` takes it as `$2`.
+Two automation stacks share one server; mobile is the product, web is a frozen
+fallback that still earns:
 
-- `./run_task.sh <task> [profile]` — generic entrypoint for one task.
-- `./run_daily_set.sh [profile]` — runs `daily_set`.
-- `./run_explore_on_bing.sh [profile]` — runs `explore_on_bing`.
-- `./run_visual_search.sh [profile]` — runs `visual_search`.
-- `./run_misc_cards.sh [profile]` — runs `misc_cards`.
-- `./run_required_searches.sh [profile]` — runs `required_searches`.
-- `./run_bonus_points.sh [profile]` — runs `bonus_points`.
-- `./web_login.sh <profile> [novnc-port]` — provision a web profile: login-mode
-  container + noVNC; user signs in by hand; then `./run_task.sh login_check <profile>`.
-  Full new-profile procedure: `docs/profile-login-procedure.md`.
+```
+cron ──13×──> bing.sh run daily --profile P ──flock──> ReDroid container (adb :5555)
+                 │  (stateless; per-profile /data volume)
+                 └──> python src/bing_mobile_flow.py --only daily   [LIVE CORE]
 
-Supported `<task>` values:
-
-- `daily_set`
-- `explore_on_bing`
-- `visual_search`
-- `misc_cards`
-- `required_searches`
-- `bonus_points`
-- `all`
-- `login_check` — provisioning probe only (rc 0 signed-in / 2 sign-in wall); never
-  part of `all`
-
-Optional env overrides for `run_task.sh`:
-
-- `VISUAL_SEARCH_RUNS=<N>` for `visual_search`
-- `REQUIRED_SEARCH_RUNS=<N>` for `required_searches`
-
-## Search behavior (current)
-
-- `required_searches` runs a fixed 30 searches per run.
-- Search phrases are sampled randomly from a generated pool of 600 phrases.
-- After each search, automation scrolls down by a random distance and waits 5–6 seconds.
-- Every executed action is logged in server logs as `[ACTION] <context> [<detail>] trigger=<source/reason>`.
-
-## Visual search asset
-
-Automation resolves image in this order:
-
-1. `/data/edge-profile/visual-search-asset.jpg`
-2. `/data/edge-profile/visual_search.jpg`
-3. `/app/visual-search-asset.jpg`
-4. `/app/visual_search.jpg`
-
-## Logs
-
-- Daily flow: `logs/web-run-YYYYMMDD-HHMMSS.log` (named profile: `web-run-<profile>-…`)
-- Task flow: `logs/web-run-<task>-YYYYMMDD-HHMMSS.log` (named: `web-run-<task>-<profile>-…`)
-
-## Mobile flow (ReDroid on this server, no emulator)
-
-Bing app (`com.microsoft.bing`) runs in the `redroid` Docker container (Android 14 x86_64,
-port 127.0.0.1:5555). Data lives in per-profile volumes `~/redroid-variants/<profile>/`
-(whole Android `/data`); snapshots in `~/profile-snapshots/<profile>.tar.gz`. The container
-is stateless — switching a profile recreates it on that volume (see `bing.sh use` below).
-It must run with DNS props or web content fails with `ERR_NAME_NOT_RESOLVED`
-(`androidboot.redroid_net_ndns` is REQUIRED — bare `redroid_net_dns1/2` are ignored by netd),
-publish ONLY 5555 (host adb server owns 5037), and boot is ready only when
-`dumpsys activity users` shows `state=RUNNING_UNLOCKED` (`sys.boot_completed` lies —
-see `docs/re-droid-gotchas.md` #1/#6).
-
-One entrypoint, interactive and cron alike (runs ON the server, `~/rewards-farmer-main`):
-
-```bash
-./bing.sh use <profile>                     # switch active variant (recreate container)
-./bing.sh current | status
-./bing.sh run daily|full|search|rewards|read-to-earn|misc-cards|screenshot [--profile P] [--iters N] [--debug|--no-debug]
-./bing.sh clear [--profile test]            # pm clear — profile test ONLY
-./bing.sh snapshot <name>                   # freeze factory volume -> profile-snapshots/<name>.tar.gz
+cron ──2×───> run_daily.sh [profile] ──> docker run rewards-farmer image
+                 │  (Edge + Selenium, bind-mount src/rewards_tasks.py:ro)
+                 └──> src/main.py -> rewards_tasks.complete_all_tasks()   [FROZEN]
 ```
 
-Profiles are named credential variants (`profiles/README.md` is the registry): `test` =
-logged-out (pm clear allowed), `prod_N`/named prod = signed-in (never cleared).
-Step-by-step provisioning (web+mobile, user logins): `docs/profile-login-procedure.md`.
-Driver-level usage (from the Windows dev machine, tunnel `ssh -N -L 15555:127.0.0.1:5555`,
-serial `127.0.0.1:15555`): `python src/bing_mobile_flow.py --profile P --only ACTION`.
+Mobile flow per run: `bing.sh` takes the device lock, ensures the container is on
+the profile's volume (`~/redroid-variants/<profile>` = whole Android `/data`),
+waits for user-0 `RUNNING`, then the uiautomator2 driver runs the tile-driven
+machine: read Rewards tiles -> cheapest-first action rounds (streak check-in sweep
+> misc cards incl. quiz > Read-to-earn article sessions > required searches), max 6
+rounds, stops on zero-point saturation; tab cleanup is the terminal invariant
+everywhere. Every action logs `[ACTION] … trigger=…`; evidence lands in
+`artifacts/<profile>/{screenshots,ui}/`. A full soak of a fresh profile runs
+~20–25 min to 75/75 daily points; a saturated profile self-heals in ~6 min.
 
-- Evidence: `artifacts/<profile>/screenshots/` (+ `ui/`); `--debug` adds a screenshot per executed action (default: on for `test`).
-- Exit codes: 0 ok (incl. terminal wall/done), 2 flow failure, 3 infra; `--clear` on a prod profile exits 3 (would log the account out).
-- Permission dialogs are auto-allowed (test path; prod keeps them only as a safety net).
-- Logged-out terminal state: Rewards page shows the 'Join Microsoft Rewards' sign-in wall; Read-to-earn requires a signed-in profile.
-- Step-by-step selector map: `docs/bing-mobile-flow.md`. Operational hazards: `docs/re-droid-gotchas.md`.
+`src/bing_mobile_flow.py` method map: boot (`relaunch/dismiss_fre/dismiss_popups/
+ensure_home`), classification (`rewards_state`: rte/done/unrendered/wall), actions
+(`check_in` streak sweep, `misc_cards`+`_quiz_flow`, `read_to_earn_flow` 5/session
+×≤20, `required_searches` from a 600-phrase pool built from `nouns.txt` ×
+`SEARCH_QUERY_TEMPLATES`), orchestration (`daily_flow`, `read_tiles`, `all_terminal`).
+CLI: `--only full|search|rewards|read-to-earn|misc-cards|required-searches|daily|
+screenshot`; exit 0 ok (incl. terminal wall/done), 2 flow failure, 3 infra.
+Intentionally-dead methods kept as spec parity records: `total_points()` (points
+reader for the someday observer idea), `close_article_tab_return_to_feed()`.
+
+Schedule: 13 mobile lines on a 110-min even grid (01:10 prod_1 … 23:10 domena11) +
+the two web lines. Canonical grid: **`profiles/README.md` § Cron grid** (the
+registry is the single source of truth; `cron/README.md` is history).
+
+## LIVE — mobile core (the farm)
+
+- `bing.sh` — sole entrypoint, cron + interactive alike.
+  - `use <profile>` — switch active variant (recreates container on that volume).
+    Fail-fast (`flock -n`) on the device lock when a `run` holds it → rc 3 "device
+    busy" (added 2026-09-14 after a mid-run switch corrupted a soak; it also
+    validates the variant dir exists and verifies the switch landed).
+  - `run daily|full|search|rewards|read-to-earn|misc-cards|screenshot [--profile P]
+    [--iters N] [--debug|--no-debug]` — BLOCKING flock: cron lines queue behind a
+    manual run instead of colliding. `--iters` is ignored for `daily`.
+  - `current | status`; `clear` (pm clear — profile `test` ONLY, rc 3 otherwise);
+    `snapshot <name>` — freezes the **factory** volume only (separate container
+    `redroid-factory`, lock 5556). **Never** for signed-in profiles: snapshot a
+    prod volume with a manual busybox tar while the container is stopped
+    (`docs/profile-provisioning-mobile.md`).
+  - Env overrides: `BING_PY`, `BING_VAR`, `BING_CONT`, `BING_PORT`, `ADB`.
+- `src/bing_mobile_flow.py` — the driver (imports stdlib + uiautomator2 only).
+- `nouns.txt` — phrase-pool seed (mobile + web both read it).
+- `profiles/README.md` — registry: profile ↔ volume ↔ status ↔ cron grid.
+  `docs/profile-accounts.md` — identities. Provisioning (current era, variant-direct
+  seeding + user login via scrcpy): `docs/profile-provisioning-mobile.md`.
+- Flow selector map: `docs/bing-mobile-flow.md`; ReDroid hazards:
+  `docs/re-droid-gotchas.md` (ndns DNS props, publish 5555 only, RUNNING_UNLOCKED).
+- Logs: `logs/bing-<profile>-daily-<ts>.log`; completion markers
+  `daily: end daily_points=A/B->C/D` and `DONE state=daily_done`.
+- Tests: `tests/test_bing.sh` covers `bing.sh` guards (fakes adb/python/container).
+
+## FROZEN but still running — web flow (Edge/Selenium, upstream lineage)
+
+Two cron lines keep earning on the two web-provisioned accounts (do not extend,
+do not add selector work — `docs/ideas/2026-09-09-web-to-mobile-migration.md` is
+the freeze decision):
+
+- `30 1 * * * run_daily.sh` (profile `default`) and `0 2 * * * run_daily.sh
+  domena1-prod`. `run_daily.sh` kills stray reward containers (lock hygiene) —
+  a 01:30 run still in progress at 02:00 gets killed by the second line; accepted.
+- Everything runs inside the `rewards-farmer-main-rewards-farmer:latest` image
+  (built on the server only; no Dockerfile in this repo; entrypoint
+  `/entrypoint.sh`; its `/app/src` is frozen at 2026-08-26). The wrappers
+  bind-mount `src/rewards_tasks.py` **only** (`:ro`) over the image copy — it is
+  the single hot-patchable module.
+- **Deploy gotcha:** the merged `rewards_tasks.py` imports `log_utils` and relies
+  on upstream `element_selectors`/`tab_utils` — none of which are bind-mounted or
+  in the image. Do NOT rsync the new `rewards_tasks.py` to the server without
+  also shipping `src/log_utils.py` (and matching selector/tab modules) or
+  rebuilding the image; the server currently runs the older self-contained copy.
+- Manual wrappers (all delegate to `run_task.sh <task> [profile]`; profile =
+  `edge-profile/` for `default`, `edge-profiles/<name>` otherwise):
+  `run_daily_set.sh`, `run_explore_on_bing.sh`, `run_visual_search.sh`,
+  `run_misc_cards.sh`, `run_required_searches.sh`, `run_bonus_points.sh`.
+  Tasks: `daily_set explore_on_bing visual_search misc_cards required_searches
+  bonus_points all login_check` (`login_check`: rc 0 signed-in / 2 wall; never
+  part of `all`). Env: `VISUAL_SEARCH_RUNS`, `REQUIRED_SEARCH_RUNS` (default 30
+  searches, random scroll + 5–6 s dwell, `[ACTION]` logging).
+- `web_login.sh <profile> [novnc-port]` — web-profile provisioning (noVNC sign-in,
+  then `run_task.sh login_check <profile>`). Web profile procedure:
+  `docs/profile-login-procedure.md` §2.
+- Visual search asset order: `/data/edge-profile/visual-search-asset.jpg` →
+  `/data/edge-profile/visual_search.jpg` → `/app/visual-search-asset.jpg` →
+  `/app/visual_search.jpg`. Web logs: `logs/web-run[-<profile>].log`,
+  `logs/web-run-<task>[-<profile>]-…log`.
+- Supporting modules (imported by `rewards_tasks.py`): `tab_utils`, `llm_utils`
+  (Ollama queries; `setup_logging` is never called → log-level env vars are inert),
+  `mouse_trajectory`, `mimic_typing`, `element_selectors`.
+
+## DEAD / historical — kept on purpose, touch only on owner's word
+
+| Path | What it is | Verdict |
+|---|---|---|
+| `src/main.py`, `src/constants.py` | upstream web entry + `data-dir` constants (reconciled by the image entrypoint, not in repo) | in-image; keep as provenance |
+| `tools/rewards_full_crawl.py`, `rewards_act.py`, `quiz_step.py`, `d3_tile_inventory.py` | live-device probes from the tile-map investigation (`docs/ideas/2026-09-09-d3-tile-map.md`) — import the mobile driver | keep: still the best diagnostic kit |
+| `scripts/factory.ps1` | Windows scrcpy login/snapshot driver — superseded by variant-direct seeding (`docs/profile-provisioning-mobile.md`) for every profile since d4 | keep as fallback; use factory volume 5556 flow only when reseeding the baseline |
+| `src/fitts_law.py`, `recordpress.py`, `analyze_keypresses.py`, `visualize_*.py`, `check_selectors.py`, `random_image_for_visual_search.py` | upstream PoC/dev tooling, zero live imports | keep (upstream heritage; deps in pyproject serve only these + web) |
+| `Proof-Of-Concept-Artifacts/` | self-contained PoC evidence package (UI dumps, screenshots, ADB ps1 wrappers); `docs/runtime-info.md` is cited by live docs | keep; ignore README drift (`back.ps1` never existed) |
+| `docs/superpowers/` | original plans/specs (2026-09-01 era) | historical record |
+| `cron/README.md` | grid history — describes the pre-2026-09-14 8×3 h grid | superseded by `profiles/README.md` § Cron grid |
+| `README.md` | upstream community readme (Ollama, poetry, local Edge) — says nothing about the farm | provenance only; read `AGENTS.md` instead |
+| `docs/ideas/*` | decision records: migration (done; web-retirement end-state NOT yet reached), d2 (historical), d3 tile map (canonical), points-reader-api (**the open someday-item**) | keep |
+
+## Operational hazards (learned, not hypothetical)
+
+- Device lock `/tmp/bing-5555.lock`: `run` queues (blocking), `use` refuses
+  (rc 3). Expect queued manual runs to start after a cron line finishes — kill
+  them if stale (`ps -eo pid,ppid,lstart,cmd | grep bing.sh`, kill the flock
+  holder's whole process group).
+- Launching a detached manual run over ssh: bare `&` silently dies AND
+  double-queues duplicates. Use
+  `setsid nohup ./bing.sh run daily --profile P --no-debug >/tmp/x.out 2>&1 </dev/null &`
+  and verify exactly one pid appears.
+- `bing.sh snapshot` = factory volume ONLY (see LIVE above).
+- Web image is the frozen layer: never assume local web fixes reach the server
+  without the companion-file rsync (see FROZEN deploy gotcha).
+- Open watch item (2026-09-15): d6 streak — post-sweep probe showed `Check in`
+  still present; verify the streak card credited on the next day's run.
+- Windows dev box: `py -3` has pytest/ollama; never use the hermes venv python.

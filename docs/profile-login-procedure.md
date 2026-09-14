@@ -100,10 +100,12 @@ safety snapshot right after login.
 ## 3. Register + cron (agent)
 
 - `profiles/README.md`: one row per profile (account email, mobile snapshot, status).
-- Cron (`cron/README.md` is the ledger; install by editing `crontab -e` ON the server):
-  - mobile: `0 <H> * * * ~/rewards-farmer-main/bing.sh run read-to-earn --profile <p> --iters 60 >> ~/rewards-farmer-main/logs/cron.log 2>&1`
-    — stagger ≥ 1 h from other bing lines (flock `/tmp/bing-5555.lock` serialises, but
-    stagger keeps runtimes predictable; RTE ≈ 6 min/10 articles).
+- Cron (install by editing `crontab -e` ON the server; back it up first):
+  - mobile: one line per profile on the even grid —
+    `<M> <H> * * * ~/rewards-farmer-main/bing.sh run daily --profile <p> --no-debug >> ~/rewards-farmer-main/logs/cron.log 2>&1`.
+    Canonical grid + placement rule: `profiles/README.md` § Cron grid (13 profiles,
+    110-min step). The old `read-to-earn --iters 60` line shape is superseded by
+    tile-driven `run daily`. flock `/tmp/bing-5555.lock` serialises overlaps.
   - web: `<M> <H> * * * ~/rewards-farmer-main/run_daily.sh <p> >> ~/rewards-farmer-main/logs/cron.log 2>&1`
     — NEVER overlapping another web run (the flow kills all image containers first);
     existing web cron is 01:30 `default`, so named profiles go later (e.g. 03:30).

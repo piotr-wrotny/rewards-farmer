@@ -1,17 +1,15 @@
 # Bing mobile flow — ReDroid (server-side)
 
-> **STATUS: TEST PATH.** This is the *test* path itself, mapped end-to-end: it runs
-> **without a Microsoft account** against a freshly `pm clear`-ed Bing app, re-traverses
-> first-run noise every run (FRE, permission prompts, region popup — auto-handled), and
-> **ends at the logged-out sign-in wall**. That wall is the test path's terminal state.
+> **STATUS: TEST PATH + PRODUCTION PATH (both mapped).** Sections marked
+> *test path* run **without a Microsoft account** against a freshly
+> `pm clear`-ed Bing app, re-traverse first-run noise every run (FRE, permission
+> prompts, region popup — auto-handled), and end at the logged-out sign-in wall —
+> that wall is the test path's terminal state.
 >
-> The **production path is a SEPARATE path to be mapped later**, once the owner's
-> credentials are attached: signed-in app, no first-run noise, real Rewards dashboard
-> (Daily set / Read to earn), article loop, tab hygiene. The permission/popup handlers
-> in `src/bing_mobile_flow.py` remain there as a safety net but will NOT be flow steps
-> in prod. The emulator-era article heuristics ported into `candidate_articles()`
-> (deploy/read_to_earn.py parity) are reserved for that future prod map — they are not
-> reachable on the test path.
+> The **production path is mapped and is the cron path**: signed-in app, no
+> first-run noise, tile-driven `run daily` on the Rewards dashboard (streak
+> check-in, misc cards, Read-to-earn, searches). The permission/popup handlers in
+> `src/bing_mobile_flow.py` remain as a safety net, not prod flow steps.
 
 Runtime: `com.microsoft.bing` 34.0.440821002 (global) on ReDroid 14 (x86_64, ARM
 translation), server `10.17.103.115`, container `redroid` mounted on the active profile
