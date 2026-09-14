@@ -94,6 +94,10 @@ the freeze decision):
 - `30 1 * * * run_daily.sh` (profile `default`) and `0 2 * * * run_daily.sh
   domena1-prod`. `run_daily.sh` kills stray reward containers (lock hygiene) —
   a 01:30 run still in progress at 02:00 gets killed by the second line; accepted.
+  Which Microsoft account the web `default` volume holds is not registered and not
+  recoverable from the volume — [INFERENCE] one of the two gmails; both gmails have
+  mobile grid slots, so coverage never depends on it (details: `profiles/README.md`
+  § Web).
 - Everything runs inside the `rewards-farmer-main-rewards-farmer:latest` image
   (built on the server only; no Dockerfile in this repo; entrypoint
   `/entrypoint.sh`; its `/app/src` is frozen at 2026-08-26). The wrappers

@@ -51,6 +51,12 @@ Web NIE dotyczy d5–d12: decyzja mobile-first (`docs/ideas/2026-09-09-web-to-mo
 **Web** (Edge): a user-data-dir volume — `default` is the historical
 `~/rewards-farmer-main/edge-profile`; named profiles live at
 `~/rewards-farmer-main/edge-profiles/<name>` (mounted as `/data/edge-profile`).
+
+Identity of the web `default` account is NOT registered and is not recoverable from
+the volume (Edge stores no plaintext e-mail there; probed 2026-09-14, git history too).
+[INFERENCE] one of the two gmails — both already hold mobile grid slots (`prod_1`/
+`prod_2`), so mobile coverage never depends on which; resolve via noVNC only if it
+ever matters.
 Provision: `./web_login.sh <name>` (login-mode container + noVNC, user signs in),
 verify: `./run_task.sh login_check <name>` (rc 0 = signed in, 2 = wall). Run:
 `./run_daily.sh <name>` / `./run_task.sh <task> <name>` (wrappers: `$1` or
