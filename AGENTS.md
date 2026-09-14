@@ -91,19 +91,24 @@ run the FULL set of earnable actions**, and neither stack alone covers it —
 visual search (file-input path) and bonus-claim exist ONLY in web
 (`src/bing_mobile_flow.py` has no visual/bonus code), while Read-to-earn/streak/quiz
 exist only in mobile. So the web line is no longer a frozen fallback: it is a
-permanent layer, and web profiles are being rolled out to the prod accounts
-(`prod_1` provisioned 2026-09-14; domena1–6 planned — branch `web-profiles-domena1-6`).
+permanent layer. Rollout 2026-09-14 COMPLETE: `prod_1` + domena1–6 all have web
+volumes (`edge-profiles/<p>`); d2–d6 provisioned + identity-proven, launch deferred
+(see Deferred launches below).
 
 - Installed web lines: `30 1 * * * run_daily.sh` (`default`), `0 2 * * *
   run_daily.sh domena1-prod`, `30 3 * * * run_daily.sh prod_1` (added 2026-09-14;
   `login_check` rc 0; verification `run_daily` soak same day: daily set + visual
   search + bonus + required searches OK, explore/misc SKIP — same UI-variant skips
   as every other web profile).
-- Rollout queue (owner directive: every prod = full coverage): domena1 (already
-  has web) → **domena2, d3, d4, d5, d6** via `./web_login.sh <p>` + noVNC user
-  login + `run_task.sh login_check <p>` (rc 0) + `run_daily.sh <p>` soak + cron
-  line each, one clear hour slot (web runs kill each other's containers).
-  Procedure: `docs/profile-login-procedure.md` §2.
+- Deferred launches (owner directive 2026-09-14): web volumes for **d2–d6 are ready
+  but NOT in cron** — no soak, no schedule until owner orders it. Each was gated by
+  identity proof (`Web Data` email grep) + `login_check` rc 0. Slots reserved by the
+  ≥1 h-gap pattern: d2 04:30, then next free hours (procedure §2/§3).
+- Provision recipe (proven 5× same day): fresh `./web_login.sh <p>` container (name
+  `rewards-web-login-<p>`), user logs in via noVNC, agent greps `Web Data` for the
+  registry email (login_check alone is account-blind — the d1-into-d2 incident),
+  then `login_check`, then registry. One profile at a time; never pre-start the
+  next container while a login is pending.
 - `run_daily.sh` kills stray reward containers before starting (lock hygiene) —
   a 01:30 run still in progress at 02:00 gets killed by the next line; accepted.
   `default` remains the historical web volume: which Microsoft account it holds is
