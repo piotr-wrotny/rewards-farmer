@@ -1,3 +1,5 @@
+import logging
+import log_utils
 import os
 import random
 import sys
@@ -44,14 +46,74 @@ SEARCH_QUERY_TEMPLATES = (
 	"{noun} comparison",
 )
 
+REWARDS_HOME_URL = "https://rewards.bing.com/"
+
+logger = logging.getLogger(__name__)
+
+
+class ElementNeverAppeared(TimeoutException):
+	"""A wait expired without the element ever being in the page.
+
+	WebDriverWait reports only that the wait ran out, so a section this market
+	does not ship and a section that was on screen and slow arrived as the same
+	TimeoutException. Reporting both as "not available in this UI variant" was
+	wrong for the second one, which is what #52 describes.
+
+	Subclassed from TimeoutException so the handlers that already wait on a
+	control being absent, claim_bonus_points and complete_bing_daily_set, keep
+	working unchanged.
+	"""
+
+
+def task_failure_report(exc: BaseException) -> tuple[str, str]:
+	"""The tag and the reason a failed task is reported with.
+
+	Absence and an expired wait need different next steps. A section this market
+	does not ship is nothing to act on, so it stays a [SKIP]. A section that was
+	on the page and never became usable may have left points behind, so it is
+	reported as a failure instead of being folded into the same sentence.
+
+	Ordered from the most specific case outwards, not by exception hierarchy:
+	ElementNeverAppeared is a TimeoutException and ElementNotReady is a
+	NoSuchElementException, so each has to be tested before the class it
+	refines.
+	"""
+	unavailable = f"not available in this UI variant ({type(exc).__name__})"
+
+	if isinstance(exc, ElementNeverAppeared):
+		return "SKIP", unavailable
+
+	if isinstance(exc, (element_selectors.ElementNotReady, TimeoutException)):
+		return "FAIL", f"on the page but not ready in time ({type(exc).__name__})"
+
+	if isinstance(exc, NoSuchElementException):
+		return "SKIP", unavailable
+
+	return "FAIL", f"{type(exc).__name__}: {log_utils.exception_summary(exc)}"
+
 class RewardsTaskUtils:
 	def __init__(self, driver: webdriver.Edge):
 		self.driver = driver
 
-		self.driver.get("https://rewards.bing.com/")
+		# Set headers to spoof the rewards app for the rewards only quests
+		self.driver.execute_cdp_cmd("Network.enable", {})
+
+		headers = {
+			"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0 MSRewards/Desktop/1.1.0",
+			"X-Rewards-Source": "msrewards-desktop",
+		}
+
+		self.driver.execute_cdp_cmd("Network.setExtraHTTPHeaders", {"headers": headers})
+
+		self.driver.get(REWARDS_HOME_URL)
 
 		self.tab_utils = tab_utils.TabUtils(driver)
 		self.tab_utils.ensure_focus()
+
+		# The tab the tasks work in. Recorded rather than looked up later,
+		# because "the current tab" stops meaning this one the moment a task
+		# opens a card in a new one.
+		self.main_window = driver.current_window_handle
 
 		self.mouse = mouse_trajectory.MouseUtils(driver)
 		self.keyboard = mimic_typing.KeyboardUtils(driver)
@@ -327,7 +389,7 @@ class RewardsTaskUtils:
 
 				self.keyboard.send_keys(f"{Keys.CONTROL}a{Keys.DELETE}")
 
-		self.driver.get("https://rewards.bing.com/")
+		self.driver.get(REWARDS_HOME_URL)
 		self.tab_utils.ensure_focus()
 
 	def random_scroll_and_dwell_after_search(self):
@@ -371,6 +433,53 @@ class RewardsTaskUtils:
 
 		print(f"[INFO] Built search phrase pool: {len(pool)}")
 		return pool
+	def restore_main_tab(self):
+		"""Close the stray tabs, keeping the one the tasks work in.
+
+		close_all_other_tabs with no arguments keeps whatever tab is focused
+		right now. After a task that died on a Bing tab that is the Bing tab, so
+		the cleanup closed the Rewards tab and kept the search results. Naming
+		the tab to keep is the difference between tidying up and destroying the
+		only tab the next task can use.
+
+		If the main tab is gone, whatever is left is better than nothing: the
+		page fix below still has to run either way.
+		"""
+		try:
+			handles = self.driver.window_handles
+
+			if not handles:
+				return
+
+			keep = self.main_window if self.main_window in handles else handles[0]
+
+			self.tab_utils.close_all_other_tabs(exceptions=[keep])
+		except Exception as exc:
+			logger.warning(
+				"Could not tidy the open tabs: %s", log_utils.exception_summary(exc)
+			)
+
+	def return_to_rewards_home(self):
+		"""Put the browser back on the Rewards home page.
+
+		Only called when a task did not finish. Navigating after every task
+		would reload the page six times a run for no reason, and the tasks that
+		succeed already leave the browser somewhere their successor can work
+		from.
+		"""
+		try:
+			if self.driver.current_url.startswith(REWARDS_HOME_URL):
+				return
+
+			self.driver.get(REWARDS_HOME_URL)
+			self.tab_utils.ensure_focus()
+		except Exception as exc:
+			# Recovery is best effort. If even this fails the next task will
+			# report its own [SKIP], which is no worse than before.
+			logger.warning(
+				"Could not return to the Rewards home page: %s",
+				log_utils.exception_summary(exc)
+			)
 
 	def claim_bonus_points(self):
 		self.switch_to_dashboard()
@@ -448,16 +557,28 @@ class RewardsTaskUtils:
 			print(f"[INFO] Running single task mode: {selected_task_name}")
 
 		for name, step in steps:
+			# The tags stay in the message rather than being folded into the
+			# level, they are the per-task outcome summary and reading a run
+			# means scanning for them.
+			completed = False
+
 			try:
 				step()
-				print(f"[OK] {name}")
-			except (NoSuchElementException, TimeoutException) as exc:
-				print(f"[SKIP] {name}: not available in this UI variant ({type(exc).__name__})")
+				logger.info("[OK] %s", name)
+				completed = True
 			except Exception as exc:
-				print(f"[FAIL] {name}: {type(exc).__name__}: {exc}")
+				tag, reason = task_failure_report(exc)
 
-			# Leave a clean tab state behind for the next task.
-			try:
-				self.tab_utils.close_all_other_tabs()
-			except Exception:
-				pass
+				logger.log(
+					logging.WARNING if tag == "SKIP" else logging.ERROR,
+					"[%s] %s: %s", tag, name, reason,
+					exc_info=logger.isEnabledFor(logging.DEBUG)
+				)
+
+			# Leave a clean tab state behind for the next task. Both halves of
+			# this matter, and they are separate failures: the right tab has to
+			# survive, and it has to be showing the right page.
+			self.restore_main_tab()
+
+			if not completed:
+				self.return_to_rewards_home()

@@ -6,6 +6,20 @@ from selenium.common.exceptions import NoSuchElementException, StaleElementRefer
 from selenium import webdriver
 
 
+class ElementNotReady(NoSuchElementException):
+	"""The element is in the page but not usable yet.
+
+	A section this market does not ship and a section that has not finished
+	hydrating both reach the caller as NoSuchElementException, which is why a
+	run could report "not available in this UI variant" for something that was
+	on screen. They need different messages and different next steps, so the
+	second case gets its own type.
+
+	Subclassed rather than separate, so every existing `except
+	NoSuchElementException` keeps catching it.
+	"""
+
+
 class Labels:
 	"""Visible labels the selectors match on.
 
@@ -45,7 +59,9 @@ class ElementSelectionUtils:
 	   pick the copy that is visible and actually has content.
 
 	Anything the current variant does not ship raises NoSuchElementException so
-	the caller can skip that task instead of aborting the whole run.
+	the caller can skip that task instead of aborting the whole run. Something
+	that is present but not usable yet raises ElementNotReady instead, because
+	skipping it is the wrong answer and so is the message that goes with it.
 	"""
 
 	def __init__(self, driver: webdriver.Edge):
@@ -66,6 +82,11 @@ class ElementSelectionUtils:
 		their `.text` is empty, so returning one produces silent no-ops further
 		up. Raising instead lets the caller's WebDriverWait retry while the page
 		finishes hydrating.
+
+		The two failures are not the same finding. No element with the id means
+		this variant does not ship the section. An id that is there but has no
+		usable copy means it is still rendering, so that one raises
+		ElementNotReady.
 		"""
 		matches = self.driver.find_elements(By.ID, element_id)
 
@@ -79,7 +100,7 @@ class ElementSelectionUtils:
 			except StaleElementReferenceException:
 				continue
 
-		raise NoSuchElementException(
+		raise ElementNotReady(
 			f"{element_id!r} is present but no visible copy has content yet"
 		)
 
@@ -122,11 +143,20 @@ class ElementSelectionUtils:
 		return self.driver.find_element(By.CSS_SELECTOR, '[id$="-tab-/dashboard"]')
 
 	def get_sidebar_section(self):
-		for section in self.driver.find_elements(By.TAG_NAME, "section"):
+		sections = self.driver.find_elements(By.TAG_NAME, "section")
+		for section in sections:
 			try:
-				# get_dom_attribute returns None for sections without an id,
-				# so normalise before comparing.
-				if (section.get_dom_attribute("id") or "").startswith("react-aria"):
+				sec_id = section.get_dom_attribute("id") or ""
+				if sec_id.startswith("react-aria") and section.is_displayed():
+					if section.find_elements(By.TAG_NAME, "a") or section.find_elements(By.TAG_NAME, "button"):
+						return section
+			except StaleElementReferenceException:
+				continue
+
+		for section in sections:
+			try:
+				sec_id = section.get_dom_attribute("id") or ""
+				if sec_id.startswith("react-aria"):
 					return section
 			except StaleElementReferenceException:
 				continue
@@ -154,11 +184,72 @@ class ElementSelectionUtils:
 		try:
 			return self._button_containing(Labels.DAILY_SET_STREAK)
 		except NoSuchElementException:
-			return self._streaks_button(3)
+			pass
+
+		# The positional fallback only helps if what sits there really is the
+		# daily set entry. On a partially rendered streaks section it is not:
+		# observed returning the mobile app entry, and clicking that opens the
+		# app store page instead of the panel, which is what the reports in #45
+		# and #46 describe. Check before handing it back, and skip the task
+		# rather than click the wrong streak.
+		candidate = self._streaks_button(3)
+		label = (candidate.text or "").strip()
+
+		if "daily set" not in label.lower():
+			raise NoSuchElementException(
+				"daily set opener not found by label, and position 3 holds "
+				f"{label.splitlines()[0] if label else '<empty>'!r} instead"
+			)
+
+		return candidate
 
 	def get_daily_set_elements(self):
-		# The first link in the opened panel is the progress row, not an activity.
-		return self.get_sidebar_section().find_elements(By.TAG_NAME, "a")[1:]
+		"""The daily set activities in the opened panel.
+
+		Everything after the first link is not reliably an activity. The panel
+		also carries promotional links, a referral card and a Bing app promo have
+		both been observed sitting between the progress row and the activities.
+		Handing one of those back gets it clicked, which navigates away from
+		rewards.bing.com, and every element captured beforehand then goes stale.
+
+		Matching on a Bing search alone was too narrow. "Turn referrals into
+		rewards" is a real daily set activity that awards points, and it points
+		at a rewards URL rather than a search. Three shapes have been observed:
+
+		1. `bing.com/search?q=...`, the classic search activity,
+		2. `bing.com/rewards/...`, seen on daily sets alongside the searches,
+		3. `rewards.bing.com/...`, the same activity written against the
+		   rewards host.
+
+		The Bing app promo behind #45 is on `bingapp.microsoft.com`, so it stays
+		out of all three, and so does anything else off those hosts. If nothing
+		matches, return nothing: clicking a promo is worse than skipping the
+		task, and the caller already reports the shortfall.
+		"""
+		activities = []
+
+		for link in self.get_sidebar_section().find_elements(By.TAG_NAME, "a"):
+			try:
+				if self._is_daily_set_activity(link.get_dom_attribute("href") or ""):
+					activities.append(link)
+			except StaleElementReferenceException:
+				continue
+
+		return activities
+
+	@staticmethod
+	def _is_daily_set_activity(href: str) -> bool:
+		"""Whether an href in the daily set panel is an activity rather than a promo."""
+		return any(
+			marker in href
+			for marker in ("bing.com/search", "bing.com/rewards", "rewards.bing.com/")
+		)
+
+	def get_daily_set_element_by_index(self, index: int):
+		elements = self.get_daily_set_elements()
+		if index < len(elements):
+			return elements[index]
+		raise NoSuchElementException(f"daily set element at index {index} not found")
 
 	# ------------------------------------------------------------------
 	# explore on bing (absent in en-US, present in some other markets)
