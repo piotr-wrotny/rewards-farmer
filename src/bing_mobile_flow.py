@@ -85,6 +85,9 @@ ACTIVITY_CARD = re.compile(
 )
 CHECKIN_TEXT = "Check in"
 CHECKED_ICON = re.compile(r'text="checked"')  # filled Day-1 ring = checked in today
+STREAK_DAY = re.compile(
+    r'node[^>]*text="Day (\d)"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"'
+)  # Streaks row: Day 1..Day 7 cells (d6 2026-09-14 sweep target)
 TOTAL_POINTS = re.compile(r'text="([\d,]+)"[^>]*>\s*<node[^>]*text="Total points"')
 DAILY_POINTS = re.compile(r'text="(\d+/\d+)"[^>]*>\s*<node[^>]*text="Daily points"')
 # Rewards PAGE balance header. d3 (2026-09-09 19:06): "Today's points" + N/M
@@ -285,10 +288,14 @@ class BingMobileFlow:
                 return True
             if ACT_CAMERA in self.focus() or "permissioncontroller" in self.focus():
                 self.recover_camera()
-            elif self.d(resourceId=SEARCH_BOX).exists:
+            elif ACT_HOME in self.focus() and self.d(resourceId=SEARCH_BOX).exists:
                 # search box but no profile button = MSN feed view over home (same
                 # activity); back pops it (prod_2 dump 2026-09-01: feed header lacks
-                # sa_profile_button).
+                # sa_profile_button). The launcher's Bing home-screen widget ALSO
+                # exposes sa_search_box (d4 2026-09-14: closing the last tab landed
+                # on the launcher; treating the widget as feed made back a no-op →
+                # 'home screen not reachable' loop). Requiring ACT_HOME routes the
+                # launcher case to the cold relaunch below.
                 action("recover", "back out of feed view")
                 self.press("back", "feed-to-home")
                 time.sleep(3)
@@ -572,10 +579,16 @@ class BingMobileFlow:
         return self._read_points(DAILY_POINTS)
 
     def check_in(self):
-        """Streak check-in (text node in the Streaks card; NOT clickable=true —
-        raw coordinate click at its centre reaches the WebView handler).
-        Success signal: Day-1 ring renders alt-text 'checked' (domena1-prod
-        2026-09-09; the '0 day' label lags and stays after checking)."""
+        """Streak check-in. Primary: 'Check in' text node (Streaks card; NOT
+        clickable=true — raw coordinate click at its centre reaches the WebView
+        handler; success signal: Day-1 ring renders alt-text 'checked' — the
+        '0 day' label lags and stays after checking, domena1-prod 2026-09-09).
+        Sweep (d6 2026-09-14, owner directive): 'Check in' taps went UNCONFIRMED
+        3× on domena6 while d5 confirmed fine — instead of per-day state sniffing
+        we now tap EVERY 'Day N' cell in the streak row once, back-to-back at a
+        jittered ~1-3 s human cadence. Day labels are clickable=false text under
+        WebView-handled rings; a tap on a locked/future day is inert, so the
+        sweep is safe and self-healing regardless of which day is due."""
         xml = self.d.dump_hierarchy()
         if CHECKED_ICON.search(xml):
             log("check-in: already checked in today (checked icon present)")
@@ -587,8 +600,18 @@ class BingMobileFlow:
         x1, y1, x2, y2 = map(int, m.groups())
         self.tap(((x1 + x2) // 2, (y1 + y2) // 2), "check-in")
         time.sleep(4)
-        ok = CHECKED_ICON.search(self.d.dump_hierarchy()) is not None
-        log(f"check-in: {'confirmed' if ok else 'UNCONFIRMED (no checked icon)'}")
+        days = []
+        for dm in STREAK_DAY.finditer(self.d.dump_hierarchy()):
+            dx1, dy1, dx2, dy2 = map(int, dm.groups()[1:])
+            days.append(((dx1 + dx2) // 2, (dy1 + dy2) // 2))
+        for i, (cx, cy) in enumerate(sorted(days, key=lambda p: p[0]), 1):
+            self.tap((cx, cy), f"streak-day-{i}")
+            time.sleep(random.uniform(0.8, 3.4))  # human jitter around 1-3 s
+        xml = self.d.dump_hierarchy()
+        ok = CHECKED_ICON.search(xml) is not None or \
+            ('text="' + CHECKIN_TEXT + '"') not in xml
+        log(f"check-in: {'confirmed' if ok else 'UNCONFIRMED (no checked icon, Check in still present)'} "
+            f"(days tapped: {len(days)})")
         return "ok" if ok else "unconfirmed"
 
     def _visible_activity_card(self, xml):
