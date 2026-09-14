@@ -57,6 +57,7 @@ the volume (Edge stores no plaintext e-mail there; probed 2026-09-14, git histor
 [INFERENCE] one of the two gmails — both already hold mobile grid slots (`prod_1`/
 `prod_2`), so mobile coverage never depends on which; resolve via noVNC only if it
 ever matters.
+
 Provision: `./web_login.sh <name>` (login-mode container + noVNC, user signs in),
 verify: `./run_task.sh login_check <name>` (rc 0 = signed in, 2 = wall). Run:
 `./run_daily.sh <name>` / `./run_task.sh <task> <name>` (wrappers: `$1` or
