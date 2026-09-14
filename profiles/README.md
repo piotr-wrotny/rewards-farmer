@@ -51,9 +51,10 @@ visual search (file-input) + bonus claim istnieją tylko w web, więc web = wars
 stała, nie fallback. **FAZA 1 (provisioning web) ZAKOŃCZONA 2026-09-14**: prod_1 ✅
 (cron 03:30 live), domena1 ✅ (cron 02:00 live), **d2–d11 ✅ provisioned + verified**
 (każdy: dowód `Web Data` grep + `login_check` rc 0; gałąź `web-profiles-domena1-6`,
-procedura `docs/profile-login-procedure.md` §2). **FAZA 2 (autoryzowana przez
-ownera):** sekwencyjny soak `run_daily.sh` d2–d11, potem linie cron ≥1 h od
-d2=04:30. **FAZA 3:** wspólna strategia kolejności mobile flow (do ustalenia).
+procedura `docs/profile-login-procedure.md` §2). **FAZA 2 (weryfikacja, w toku):**
+sekwencyjny soak `run_daily.sh` d2–d11 — SAME TESTY, cron NIE instalowany przez
+agenta. **FAZA 3 (wspólna z ownerem):** strategia włączania profile web (sloty cron)
++ kolejność mobile flow.
 
 Wcześniejsza nota mobile-first
 (`docs/ideas/2026-09-09-web-to-mobile-migration.md`) — historyczna.
