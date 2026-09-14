@@ -48,13 +48,12 @@ Wiersze poniżej oznaczają tylko STATUS provisioningu; sloty crouna czytaj z te
 
 Web: decyzja ownera 2026-09-14 — **każde konto prod musi robić pełny zestaw akcji**;
 visual search (file-input) + bonus claim istnieją tylko w web, więc web = warstwa
-stała, nie fallback. Rollout web **2026-09-14 ZAKOŃCZONY**: prod_1 ✅ (cron 03:30
-live), domena1 ✅ (cron 02:00 live), **d2 d3 d4 d5 d6 ✅ provisioned+verified, soak
-& cron DEFERRED** — uruchomienie na polecenie ownera (gałąź `web-profiles-domena1-6`,
-procedura `docs/profile-login-procedure.md` §2). **Plan ownera 2026-09-14 (fazy):
-(1) provisioning web d7–d11 (d12 porzucony) — kolejno, ta sama procedura;
-(2) PO provisioning: web flow (cron+soak) dla d2–d11 jednym zleceniem, sloty ≥1 h
-(d2=04:30 zarezerwowany); (3) potem wspólna strategia kolejności mobile flow.**
+stała, nie fallback. **FAZA 1 (provisioning web) ZAKOŃCZONA 2026-09-14**: prod_1 ✅
+(cron 03:30 live), domena1 ✅ (cron 02:00 live), **d2–d11 ✅ provisioned + verified**
+(każdy: dowód `Web Data` grep + `login_check` rc 0; gałąź `web-profiles-domena1-6`,
+procedura `docs/profile-login-procedure.md` §2). **FAZA 2 (autoryzowana przez
+ownera):** sekwencyjny soak `run_daily.sh` d2–d11, potem linie cron ≥1 h od
+d2=04:30. **FAZA 3:** wspólna strategia kolejności mobile flow (do ustalenia).
 
 Wcześniejsza nota mobile-first
 (`docs/ideas/2026-09-09-web-to-mobile-migration.md`) — historyczna.

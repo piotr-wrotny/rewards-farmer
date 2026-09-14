@@ -91,20 +91,22 @@ run the FULL set of earnable actions**, and neither stack alone covers it —
 visual search (file-input path) and bonus-claim exist ONLY in web
 (`src/bing_mobile_flow.py` has no visual/bonus code), while Read-to-earn/streak/quiz
 exist only in mobile. So the web line is no longer a frozen fallback: it is a
-permanent layer. Rollout 2026-09-14 COMPLETE: `prod_1` + domena1–6 all have web
-volumes (`edge-profiles/<p>`); d2–d6 provisioned + identity-proven, launch deferred
-(see Deferred launches below).
+permanent layer. Rollout 2026-09-14 COMPLETE (provisioning): `prod_1` +
+domena1–11 all have web volumes (`edge-profiles/<p>`); d2–d11 provisioned +
+identity-proven, launches ordered by owner AFTER provisioning (phase 2).
 
 - Installed web lines: `30 1 * * * run_daily.sh` (`default`), `0 2 * * *
   run_daily.sh domena1-prod`, `30 3 * * * run_daily.sh prod_1` (added 2026-09-14;
   `login_check` rc 0; verification `run_daily` soak same day: daily set + visual
   search + bonus + required searches OK, explore/misc SKIP — same UI-variant skips
   as every other web profile).
-- Deferred launches (owner directive 2026-09-14): web volumes for **d2–d6 are ready
-  but NOT in cron** — no soak, no schedule until owner orders it. Each was gated by
-  identity proof (`Web Data` email grep) + `login_check` rc 0. Slots reserved by the
-  ≥1 h-gap pattern: d2 04:30, then next free hours (procedure §2/§3).
-- Provision recipe (proven 5× same day): fresh `./web_login.sh <p>` container (name
+- Phase 2 (owner-authorized same day: „puścisz web flow dla profili d2 i dalej"):
+  soak each of d2–d11 sequentially (one full `run_daily.sh <p>` per profile, NEVER
+  parallel — the ancestor sweep kills concurrent containers), then install cron
+  lines with ≥1 h gaps starting d2 at 04:30 (existing 01:30/02:00/03:30 untouched;
+  mobile grid unaffected — different subsystem). Soak verdicts recorded in
+  `profiles/README.md`.
+- Provision recipe (proven 10× same day): fresh `./web_login.sh <p>` container (name
   `rewards-web-login-<p>`), user logs in via noVNC, agent greps `Web Data` for the
   registry email (login_check alone is account-blind — the d1-into-d2 incident),
   then `login_check`, then registry. One profile at a time; never pre-start the
