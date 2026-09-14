@@ -15,6 +15,18 @@ credentials) then `factory.ps1 save <name>`. New variant from snapshot:
 ssh piotr.wrotny@10.17.103.115 'p=<name>; docker run --rm -v /home/piotr.wrotny:/host busybox sh -c "mkdir -p /host/redroid-variants/$p && tar -C /host/redroid-variants/$p -xzf /host/profile-snapshots/$p.tar.gz" && cd ~/rewards-farmer-main && ./bing.sh use $p'
 ```
 
+## Cron grid (mobile, jedyna prawda dla harmonogramu — zainstalowane 2026-09-14)
+
+13 profili signed-in, równy krok **110 min** od 01:10, backup starego crontabu:
+`/tmp/crontab.bak.20260914-110915`. Run `daily` 16–26 min → bufor ≥80 min; ostatni
+start 23:10, pauza nocna 120 min. Web-linie (`run_daily.sh` 01:30 + domena1 02:00)
+bez zmian — inny subsystem (Edge), bez kolizji locka 5555.
+
+`01:10 prod_1 · 03:00 prod_2 · 04:50 d1 · 06:40 d2 · 08:30 d3 · 10:20 d4 ·
+12:10 d5 · 14:00 d6 · 15:50 d7 · 17:40 d8 · 19:30 d9 · 21:20 d10 · 23:10 d11`
+
+Wiersze poniżej oznaczają tylko STATUS provisioningu; sloty crouna czytaj z tej sekcji.
+
 | name | kind | account | mobile snapshot | status |
 |------|------|---------|-----------------|--------|
 | test | anonymous | — | `test.tar.gz` | rebuilt 2026-09-01 from factory baseline (`pm clear` + `cp -a`); `bing.sh clear` allowed |
@@ -27,11 +39,11 @@ ssh piotr.wrotny@10.17.103.115 'p=<name>; docker run --rm -v /home/piotr.wrotny:
 | domena5-prod | signed-in | domena-5@agregat-streszczen.pl (CONFIRMED dumpem) | `domena5-prod-signedin.tar.gz` (4423 entries, 213 MB, 2026-09-12 16:53) | PROVISIONED 2026-09-12 variant-direct (docs/profile-provisioning-mobile.md; seed z `test`): login VERIFIED TEXTUALLY (`Signed in as` + email, no wall), gate `bing.sh run rewards --iters 0` rc 0 state=rte (day-0 fresh) |
 | domena6-prod | signed-in | domena-6@agregat-streszczen.pl (CONFIRMED dumpem) | `domena6-prod-signedin.tar.gz` (4414 entries, 2026-09-12 17:00) | PROVISIONED 2026-09-12 variant-direct (seed z `test`): login VERIFIED TEXTUALLY (email + `Total points`, no wall), gate `bing.sh run rewards --iters 0` rc 0 state=rte (day-0 fresh) |
 | domena7-prod | signed-in | domena-7@agregat-streszczen.pl (CONFIRMED dumpem) | `domena7-prod-signedin.tar.gz` (4373 entries, 2026-09-12 17:07) | PROVISIONED 2026-09-12 variant-direct (seed z `test`): login VERIFIED TEXTUALLY (email + `Total points`, no wall), gate `bing.sh run rewards --iters 0` rc 0 state=rte (day-0 fresh) |
-| domena8-prod | to-create | domena-8@agregat-streszczen.pl (tbp) | — (skasowany) | **DO UTWORZENIA** 2026-09-12: utworzenie finalnie NIE zadziałało (decyzja ownera) — wolumin + snapshot usunięte z serwera; powtórzyć pełną procedurę (docs/profile-provisioning-mobile.md) włącznie z seedem |
-| domena9-prod | to-create | domena-9@agregat-streszczen.pl (tbp) | — (skasowany) | **DO UTWORZENIA** 2026-09-12: owner zdecydował o usunięciu (login i tak odłożony) — wolumin usunięty z serwera; powtórzyć pełną procedurę włącznie z seedem |
-| domena10-prod | pending | domena-10@agregat-streszczen.pl (tbp) | — | SEEDED 2026-09-12 from `test`; login PENDING |
-| domena11-prod | pending | domena-11@agregat-streszczen.pl (tbp) | — | SEEDED 2026-09-12 from `test`; login PENDING |
-| domena12-prod | pending | domena-12@agregat-streszczen.pl (tbp) | — | SEEDED 2026-09-12 from `test`; login PENDING |
+| domena8-prod | signed-in | domena-8@agregat-streszczen.pl (CONFIRMED dumpem) | `domena8-prod-signedin.tar.gz` (4346 entries, 192 MB, 2026-09-14 09:57) | PROVISIONED 2026-09-14 (re-created after 2026-09-12 deletion): owner logged in on seeded d10 volume; agent materialized `domena8-prod` volume + snapshot from it, then re-seeded d10 clean. Login VERIFIED TEXTUALLY (`domena-8@…` + 'Total points', no wall), gate rc 0 state=rte. **CRON 17:40** (grid 110-min od 2026-09-14) |
+| domena9-prod | signed-in | domena-9@agregat-streszczen.pl (CONFIRMED dumpem) | `domena9-prod-signedin.tar.gz` (4305 entries, 2026-09-14 10:03) | PROVISIONED 2026-09-14 (re-created after 2026-09-12 deletion; seed z `test` busybox-tarem bez sudo): login VERIFIED TEXTUALLY, gate rc 0 state=rte. **CRON 19:30** |
+| domena10-prod | signed-in | domena-10@agregat-streszczen.pl (CONFIRMED dumpem) | `domena10-prod-signedin.tar.gz` (4393 entries, 2026-09-14 10:13) | PROVISIONED 2026-09-14 (wolumin seedowany 12.09, omyłkowo skasowany i reseedy 14.09 — fałszywy switch `bing.sh use` naprawiony gardą flock -n + walidacją, patrz bing.sh). Login VERIFIED TEXTUALLY, gate rc 0 state=rte. **CRON 21:20** |
+| domena11-prod | signed-in | domena-11@agregat-streszczen.pl (CONFIRMED dumpem) | `domena11-prod-signedin.tar.gz` (4296 entries, 2026-09-14 10:58) | PROVISIONED 2026-09-14 variant-direct (seed z 12.09): login VERIFIED TEXTUALLY, gate rc 0 state=rte. **CRON 23:10** |
+| domena12-prod | abandoned | domena-12@agregat-streszczen.pl | — | **ODPUSZCZONY 2026-09-14** (decyzja ownera, po zakończonym d11): ekran loginu był przygotowany, login nie wykonany. Wolumin `~/redroid-variants/domena12-prod` (czysty seed z 12.09) został na serwerze — odtworzyć procedurą z docs/profile-provisioning-mobile.md gdyby wrócił do planu |
 
 Web NIE dotyczy d5–d12: decyzja mobile-first (`docs/ideas/2026-09-09-web-to-mobile-migration.md`
 — web profiles frozen 2026-09-09; nowe profile = mobile-only).
