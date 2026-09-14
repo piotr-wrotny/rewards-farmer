@@ -96,6 +96,18 @@ safety snapshot right after login.
 4. Agent: `docker rm -f rewards-web-login`, then verify:
    `./run_task.sh login_check <p>` → log must end `state=signed_in`, rc 0
    (rc 2 = wall → redo §2.3). Probe = earn-tab renders / no sign-in redirect.
+5. **Prove the account identity, not just the session.** `login_check` passes for
+   ANY signed-in Microsoft account — it cannot tell d1 from d2. After login, grep
+   the registry email out of the volume (landing login leaves it in `Web Data`):
+   `docker run --rm -v ~/rewards-farmer-main/edge-profiles/<p>:/v:ro --entrypoint sh
+   rewards-farmer-main-rewards-farmer:latest -c 'grep -raoE
+   "[a-z0-9-]+@[a-z.-]+" "/v/Profile 1/Web Data" | cut -d: -f2- | sort -u'`
+   — must show the registry email for `<p>`. (2026-09-14: a d1 login landed in the
+   d2 volume because the noVNC container was started for the NEXT profile while the
+   user logged into the PREVIOUS one; volume quarantined as
+   `domena2-prod.D1-CONTAMINATED-20260914`.) Rule: start `web_login.sh <p>` only
+   after the previous profile is fully verified and closed, and confirm the email
+   before trusting any `login_check`.
 
 ## 3. Register + cron (agent)
 
@@ -107,10 +119,11 @@ safety snapshot right after login.
     110-min step). The old `read-to-earn --iters 60` line shape is superseded by
     tile-driven `run daily`. flock `/tmp/bing-5555.lock` serialises overlaps.
   - web: `<M> <H> * * * ~/rewards-farmer-main/run_daily.sh <p> >> ~/rewards-farmer-main/logs/cron.log 2>&1`
-    — NEVER overlapping another web run (the flow kills all image containers first);
-    existing web cron is 01:30 `default` + 02:00 `domena1-prod` (frozen fallback;
-    a 01:30 run still going at 02:00 is killed by the second line), so any future
-    named web profile goes later (e.g. 03:30).
+    — NEVER overlapping another web run (the flow kills all image containers first).
+    Installed (2026-09-14): 01:30 `default` · 02:00 `domena1-prod` · 03:30 `prod_1`
+    (web = permanent layer, not fallback). Next named web profile continues the
+    ≥1 h-gap pattern (d2 → 04:30). A still-running earlier line gets killed by the
+    next one — keep ≥1 h clearance or accept the kill.
 - Back up crontab before touching it: `crontab -l > ~/crontab.backup-$(date +%Y%m%d)`.
 
 ## Exit codes / verification matrix
