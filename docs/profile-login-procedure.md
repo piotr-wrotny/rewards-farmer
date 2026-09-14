@@ -108,7 +108,9 @@ safety snapshot right after login.
     tile-driven `run daily`. flock `/tmp/bing-5555.lock` serialises overlaps.
   - web: `<M> <H> * * * ~/rewards-farmer-main/run_daily.sh <p> >> ~/rewards-farmer-main/logs/cron.log 2>&1`
     — NEVER overlapping another web run (the flow kills all image containers first);
-    existing web cron is 01:30 `default`, so named profiles go later (e.g. 03:30).
+    existing web cron is 01:30 `default` + 02:00 `domena1-prod` (frozen fallback;
+    a 01:30 run still going at 02:00 is killed by the second line), so any future
+    named web profile goes later (e.g. 03:30).
 - Back up crontab before touching it: `crontab -l > ~/crontab.backup-$(date +%Y%m%d)`.
 
 ## Exit codes / verification matrix
