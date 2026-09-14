@@ -95,8 +95,10 @@ permanent layer, and web profiles are being rolled out to the prod accounts
 (`prod_1` provisioned 2026-09-14; domena1–6 planned — branch `web-profiles-domena1-6`).
 
 - Installed web lines: `30 1 * * * run_daily.sh` (`default`), `0 2 * * *
-  run_daily.sh domena1-prod`, `30 3 * * * run_daily.sh prod_1` (added 2026-09-14,
-  `login_check` rc 0 + full `run_daily` soak same day).
+  run_daily.sh domena1-prod`, `30 3 * * * run_daily.sh prod_1` (added 2026-09-14;
+  `login_check` rc 0; verification `run_daily` soak same day: daily set + visual
+  search + bonus + required searches OK, explore/misc SKIP — same UI-variant skips
+  as every other web profile).
 - Rollout queue (owner directive: every prod = full coverage): domena1 (already
   has web) → **domena2, d3, d4, d5, d6** via `./web_login.sh <p>` + noVNC user
   login + `run_task.sh login_check <p>` (rc 0) + `run_daily.sh <p>` soak + cron
