@@ -100,12 +100,12 @@ identity-proven, launches ordered by owner AFTER provisioning (phase 2).
   `login_check` rc 0; verification `run_daily` soak same day: daily set + visual
   search + bonus + required searches OK, explore/misc SKIP — same UI-variant skips
   as every other web profile).
-- Phase 2 (verification, running): soak each of d2–d11 sequentially (one full
-  `run_daily.sh <p>`, NEVER parallel — the ancestor sweep kills concurrent
-  containers). Verdicts recorded in `profiles/README.md`. NO cron installed by the
-  agent: activation strategy (which profiles, which slots, ≥1 h gaps against
-  existing 01:30/02:00/03:30) is decided JOINTLY with the owner after results
-  (phase 3, together with mobile-flow ordering).
+- Phase 2 COMPLETE 2026-09-14 — verification all green 10/10: sequential soaks of
+  d2–d11 (NEVER parallel — the ancestor sweep kills concurrent containers); 8×
+  4 OK/2 SKIP, d3+d8 failed visual search on a transient driver ReadTimeout, retry
+  `run_task.sh visual_search` PASS (composite verdicts in `profiles/README.md`).
+  Cron installation PENDING owner's phase-3 decision (activation slots + mobile
+  ordering are a joint call; existing 01:30/02:00/03:30 lines untouched so far).
 - Provision recipe (proven 10× same day): fresh `./web_login.sh <p>` container (name
   `rewards-web-login-<p>`), user logs in via noVNC, agent greps `Web Data` for the
   registry email (login_check alone is account-blind — the d1-into-d2 incident),
