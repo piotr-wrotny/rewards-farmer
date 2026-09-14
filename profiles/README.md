@@ -19,8 +19,9 @@ ssh piotr.wrotny@10.17.103.115 'p=<name>; docker run --rm -v /home/piotr.wrotny:
 
 13 profili signed-in, równy krok **110 min** od 01:10, backup starego crontabu:
 `/tmp/crontab.bak.20260914-110915`. Run `daily` 16–26 min → bufor ≥80 min; ostatni
-start 23:10, pauza nocna 120 min. Web-linie (`run_daily.sh` 01:30 + domena1 02:00)
-bez zmian — inny subsystem (Edge), bez kolizji locka 5555.
+start 23:10, pauza nocna 120 min. Web-linie (`run_daily.sh`): 01:30 `default` ·
+02:00 `domena1-prod` · 03:30 `prod_1` (dodana 2026-09-14) — inny subsystem (Edge),
+bez kolizji locka 5555; web-linie nie mogą na siebie nachodzić (kasują kontenery).
 
 `01:10 prod_1 · 03:00 prod_2 · 04:50 d1 · 06:40 d2 · 08:30 d3 · 10:20 d4 ·
 12:10 d5 · 14:00 d6 · 15:50 d7 · 17:40 d8 · 19:30 d9 · 21:20 d10 · 23:10 d11`
@@ -31,7 +32,7 @@ Wiersze poniżej oznaczają tylko STATUS provisioningu; sloty crouna czytaj z te
 |------|------|---------|-----------------|--------|
 | test | anonymous | — | `test.tar.gz` | rebuilt 2026-09-01 from factory baseline (`pm clear` + `cp -a`); `bing.sh clear` allowed |
 | prod_2 | signed-in | 616piotrek@gmail.com | `prod_2.tar.gz` | READ-TO-EARN e2e VERIFIED 2026-09-01: 30/30 daily pts, 2 sessions (`docs/bing-mobile-flow.md` § Read-to-earn e2e) |
-| prod_1 | signed-in | piotrwro01@gmail.com | `prod_1.tar.gz` | VERIFIED signed-in 2026-09-01 (factory login → snapshot → variant); RTE `30 points earned` |
+| prod_1 | signed-in | piotrwro01@gmail.com | `prod_1.tar.gz` | VERIFIED signed-in 2026-09-01 (factory login → snapshot → variant); RTE `30 points earned`. **WEB PROVISIONED 2026-09-14** (owner directive: every prod = full coverage; visual search + bonus exist only in web): `edge-profiles/prod_1`, noVNC login, `login_check` rc 0 `state=signed_in`, cron `30 3 * * * run_daily.sh prod_1` (backup `/tmp/crontab.bak.20260914-134100`) |
 | domena1-prod | signed-in | domena-1@agregat-streszczen.pl | `domena1-prod.tar.gz` | PROVISIONED 2026-09-09 (`docs/profile-login-procedure.md`): mobile VERIFIED on variant (`rewards` probe → `state=rte` rc 0); MISC-CARDS e2e VERIFIED 2026-09-09 (5 cards +25 pts, `bing-domena1-prod-misc-cards-20260909-141327.log`); web VERIFIED `login_check` → `state=signed_in`; cron: web + mobile both 02:00; TILE-DRIVEN DAILY VERIFIED 2026-09-09 evening (`bing.sh run daily`, rc 0, 75/75 all-terminal, check-in `ok`) |
 | domena2-prod | signed-in | domena-2@agregat-streszczen.pl | `domena2-prod.tar.gz` | PROVISIONED + MISC-CARDS e2e VERIFIED 2026-09-09 clean-account (9 cards +39 pts, `Daily points 0/75→15/75`, rc 0; `docs/bing-mobile-flow.md` § Misc cards e2e); TILE-DRIVEN DAILY VERIFIED 2026-09-09 evening: 65/75→75/75 (pool card +10), check-in inert on fresh account (UNCONFIRMED best-effort); web NOT provisioned yet (needs `./web_login.sh domena2-prod`) |
 | domena4-prod | signed-in | domena-4@agregat-streszczen.pl | `domena4-prod-signedin.tar.gz` (4295 entries, 211 MB, 2026-09-09 20:18) | PROVISIONED 2026-09-09 variant-direct (docs/profile-provisioning-mobile.md; seed from `test` volume per d3 precedent — doc §1 factory-source updated): login verified TEXTUALLY (email + 'Total points', no 'Sign in'), gate `bing.sh run rewards --iters 0` rc 0 state=rte (fresh day-0: RTE 0/30 active). TILE-DRIVEN DAILY clean-slate e2e VERIFIED same day: `bing.sh run daily` rc 0, `0/75→75/75` in ~23 min (10/10 pool cards credited incl. auto-answered quiz 'Wizarding Creator?' +10, RTE `done` 4 sessions/20 reads — feed opened first try every session, zero-bounds guard never tripped; 3 SERP search; check-in node absent day-0 (like d2) → best-effort skip) |
@@ -45,8 +46,13 @@ Wiersze poniżej oznaczają tylko STATUS provisioningu; sloty crouna czytaj z te
 | domena11-prod | signed-in | domena-11@agregat-streszczen.pl (CONFIRMED dumpem) | `domena11-prod-signedin.tar.gz` (4296 entries, 2026-09-14 10:58) | PROVISIONED 2026-09-14 variant-direct (seed z 12.09): login VERIFIED TEXTUALLY, gate rc 0 state=rte. **CRON 23:10** |
 | domena12-prod | abandoned | domena-12@agregat-streszczen.pl | — | **ODPUSZCZONY 2026-09-14** (decyzja ownera, po zakończonym d11): ekran loginu był przygotowany, login nie wykonany. Wolumin `~/redroid-variants/domena12-prod` (czysty seed z 12.09) został na serwerze — odtworzyć procedurą z docs/profile-provisioning-mobile.md gdyby wrócił do planu |
 
-Web NIE dotyczy d5–d12: decyzja mobile-first (`docs/ideas/2026-09-09-web-to-mobile-migration.md`
-— web profiles frozen 2026-09-09; nowe profile = mobile-only).
+Web: decyzja ownera 2026-09-14 — **każde konto prod musi robić pełny zestaw akcji**;
+visual search (file-input) + bonus claim istnieją tylko w web, więc web = warstwa
+stała, nie fallback. Rollout web: prod_1 ✅ (2026-09-14), domena1 ✅, kolejność
+**d2 → d3 → d4 → d5 → d6** (gałąź `web-profiles-domena1-6`, procedura
+`docs/profile-login-procedure.md` §2). d7–d11 na razie mobile-only (decision do
+przedyskutowania po d6). Wcześniejsza nota mobile-first
+(`docs/ideas/2026-09-09-web-to-mobile-migration.md`) — historyczna.
 
 **Web** (Edge): a user-data-dir volume — `default` is the historical
 `~/rewards-farmer-main/edge-profile`; named profiles live at

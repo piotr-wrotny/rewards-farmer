@@ -21,17 +21,17 @@ Ground rules for any future change:
 
 ## How the system works today
 
-Two automation stacks share one server; mobile is the product, web is a frozen
-fallback that still earns:
+Two automation stacks share one server; both are required — mobile earns
+RTE/streak/quiz, web earns visual search + bonus (full set = both):
 
 ```
 cron ──13×──> bing.sh run daily --profile P ──flock──> ReDroid container (adb :5555)
                  │  (stateless; per-profile /data volume)
                  └──> python src/bing_mobile_flow.py --only daily   [LIVE CORE]
 
-cron ──2×───> run_daily.sh [profile] ──> docker run rewards-farmer image
+cron ──3×───> run_daily.sh [profile] ──> docker run rewards-farmer image
                  │  (Edge + Selenium, bind-mount src/rewards_tasks.py:ro)
-                 └──> src/main.py -> rewards_tasks.complete_all_tasks()   [FROZEN]
+                 └──> src/main.py -> rewards_tasks.complete_all_tasks()   [LIVE WEB]
 ```
 
 Mobile flow per run: `bing.sh` takes the device lock, ensures the container is on
@@ -85,19 +85,30 @@ registry is the single source of truth; `cron/README.md` is history).
   `daily: end daily_points=A/B->C/D` and `DONE state=daily_done`.
 - Tests: `tests/test_bing.sh` covers `bing.sh` guards (fakes adb/python/container).
 
-## FROZEN but still running — web flow (Edge/Selenium, upstream lineage)
+## LIVE — web layer (required for full coverage, rolling out to all prods)
+Two stacks share one server. Owner decision 2026-09-14: **every prod account must
+run the FULL set of earnable actions**, and neither stack alone covers it —
+visual search (file-input path) and bonus-claim exist ONLY in web
+(`src/bing_mobile_flow.py` has no visual/bonus code), while Read-to-earn/streak/quiz
+exist only in mobile. So the web line is no longer a frozen fallback: it is a
+permanent layer, and web profiles are being rolled out to the prod accounts
+(`prod_1` provisioned 2026-09-14; domena1–6 planned — branch `web-profiles-domena1-6`).
 
-Two cron lines keep earning on the two web-provisioned accounts (do not extend,
-do not add selector work — `docs/ideas/2026-09-09-web-to-mobile-migration.md` is
-the freeze decision):
-
-- `30 1 * * * run_daily.sh` (profile `default`) and `0 2 * * * run_daily.sh
-  domena1-prod`. `run_daily.sh` kills stray reward containers (lock hygiene) —
-  a 01:30 run still in progress at 02:00 gets killed by the second line; accepted.
-  Which Microsoft account the web `default` volume holds is not registered and not
-  recoverable from the volume — [INFERENCE] one of the two gmails; both gmails have
-  mobile grid slots, so coverage never depends on it (details: `profiles/README.md`
-  § Web).
+- Installed web lines: `30 1 * * * run_daily.sh` (`default`), `0 2 * * *
+  run_daily.sh domena1-prod`, `30 3 * * * run_daily.sh prod_1` (added 2026-09-14,
+  `login_check` rc 0 + full `run_daily` soak same day).
+- Rollout queue (owner directive: every prod = full coverage): domena1 (already
+  has web) → **domena2, d3, d4, d5, d6** via `./web_login.sh <p>` + noVNC user
+  login + `run_task.sh login_check <p>` (rc 0) + `run_daily.sh <p>` soak + cron
+  line each, one clear hour slot (web runs kill each other's containers).
+  Procedure: `docs/profile-login-procedure.md` §2.
+- `run_daily.sh` kills stray reward containers before starting (lock hygiene) —
+  a 01:30 run still in progress at 02:00 gets killed by the next line; accepted.
+  `default` remains the historical web volume: which Microsoft account it holds is
+  not registered and not recoverable from the volume — [INFERENCE] one of the two
+  gmails; both gmails have mobile grid slots, and `prod_1` now has its own
+  deterministic web volume, so coverage no longer depends on it (details:
+  `profiles/README.md` § Web).
 - Everything runs inside the `rewards-farmer-main-rewards-farmer:latest` image
   (built on the server only; no Dockerfile in this repo; entrypoint
   `/entrypoint.sh`; its `/app/src` is frozen at 2026-08-26). The wrappers
@@ -152,8 +163,8 @@ the freeze decision):
   `setsid nohup ./bing.sh run daily --profile P --no-debug >/tmp/x.out 2>&1 </dev/null &`
   and verify exactly one pid appears.
 - `bing.sh snapshot` = factory volume ONLY (see LIVE above).
-- Web image is the frozen layer: never assume local web fixes reach the server
-  without the companion-file rsync (see FROZEN deploy gotcha).
+- Web image `/app/src` is frozen: never assume local web fixes reach the server
+  without the companion-file rsync (see deploy gotcha in § LIVE web layer).
 - Open watch item (2026-09-15): d6 streak — post-sweep probe showed `Check in`
   still present; verify the streak card credited on the next day's run.
 - Windows dev box: `py -3` has pytest/ollama; never use the hermes venv python.

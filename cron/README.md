@@ -5,7 +5,8 @@ the same entrypoint humans use — no separate path.
 > **GRID SUPERSEDED 2026-09-14.** The block below is the 2026-09-12 8×3 h grid
 > (history only). The installed grid since 2026-09-14 is 13 mobile profiles on a
 > 110-min step (01:10 prod_1 … 23:10 domena11); canonical source:
-> `profiles/README.md` § Cron grid. Web lines (01:30 / 02:00) are unchanged.
+> `profiles/README.md` § Cron grid. Web lines: 01:30 `default` · 02:00
+> `domena1-prod` · 03:30 `prod_1` (web is a permanent layer since 2026-09-14).
 
 ACTUALLY INSTALLED (server crontab, 2026-09-12 night — even-interval grid: 8 mobile
 profiles (d8 removed), 24 h ÷ 8 = 3 h, start 01:15 (owner decision); every change backs
