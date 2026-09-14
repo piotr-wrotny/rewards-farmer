@@ -52,9 +52,15 @@ cmd="${1:-}"; shift || true
 LOCK=""
 case "$cmd" in
   use)
-    p="${1:?profile}"; LOCK=/tmp/bing-$PORT.lock; exec 9>"$LOCK"; flock 9
-    [ -d "$VAR/$p" ] || die "no variant $p" 3
-    ensure_container "$p"; echo "active=$p" ;;
+    p="${1:?profile}"
+    [ -d "$VAR/$p" ] || die "no variant $p (known: $(ls "$VAR" 2>/dev/null | tr '\n' ' '))" 3
+    LOCK=/tmp/bing-$PORT.lock; exec 9>"$LOCK"
+    # Non-blocking: device busy with a flow/cron -> fail fast, never queue a
+    # mid-flight takeover (d11 2026-09-14: queueing `use` behind cron d3).
+    flock -n 9 || die "device busy (holder: $(fuser "$LOCK" 2>/dev/null | tr -s ' ')); retry after run ends" 3
+    ensure_container "$p"
+    [ "$(current)" = "$p" ] || die "switch failed: active=$(current || echo none), expected $p" 3
+    echo "active=$p" ;;
   current)
     echo "active=$(current || echo none)" ;;
   status)
