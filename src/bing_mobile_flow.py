@@ -826,6 +826,20 @@ class BingMobileFlow:
                 log(f"attempt {attempt+1}: RTE tile unrendered — settling 8s")
                 time.sleep(8)
                 continue
+            if state == "unknown":
+                # d1/d2 2026-09-15 04:58/06:59: the Rewards WebView redirected to
+                # Sapphire home mid-attempt (focus=MainSapphireActivity, MSN feed
+                # nodes, zero Rewards content) — page churn, NOT terminal: the
+                # RTE tile still had 6-9 points. Re-enter the Rewards path (its
+                # ensure_home cold-relaunches if needed); shared attempt budget
+                # keeps the walk bounded.
+                log(f"attempt {attempt+1}: rewards page vanished (unknown) — re-entering path")
+                try:
+                    self.open_rewards()
+                except RuntimeError as exc:
+                    log(f"re-enter failed ({exc}) — terminal")
+                    return "unknown", False
+                continue
             if state != "rte":
                 return state, False
             # stale-bounds guard: the card coords from a stale dump may hit a

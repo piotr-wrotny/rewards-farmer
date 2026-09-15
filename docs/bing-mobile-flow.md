@@ -156,6 +156,7 @@ loop (≤6 rounds):
 | Invariant | Guard / evidence |
 |---|---|
 | Zero-size bounds tile (`[0,0][0,0]`) = `unrendered`, NEVER tap (center=(0,0) exits app — root cause of day-0 RTE 'feed-not-opened' on d3) | settle 8 s retry ×3 (`walk_rewards_path`) |
+| `unknown` = Rewards WebView vanished to Sapphire home mid-page (d1/d2 2026-09-15: focus=MainSapphireActivity, zero Rewards nodes, RTE tile still 21/30) | re-enter Rewards path per attempt (shared 3-attempt budget in `walk_rewards_path`); terminal only after budget |
 | RTE done: `N out of M` with `done>=cap` counts as done, not active | `_rte_match`; d3 19:29 `done` at 30/30, flow stopped |
 | RTE benefit-stop: tile (done,cap) unchanged after a FULL session → `no-benefit` | d2/d3 saturated runs burned no timeouts |
 | Δ=0 across a round → stop (not timeouts/counters) | all three evening runs ended `ZERO delta … stopping` in round 2 |
