@@ -160,6 +160,7 @@ loop (≤6 rounds):
 | RTE done: `N out of M` with `done>=cap` counts as done, not active | `_rte_match`; d3 19:29 `done` at 30/30, flow stopped |
 | RTE benefit-stop: tile (done,cap) unchanged after a FULL session → `no-benefit` | d2/d3 saturated runs burned no timeouts |
 | Δ=0 across a round → stop (not timeouts/counters) | all three evening runs ended `ZERO delta … stopping` in round 2 |
+| Check-in sweep runs EVERY run regardless of the `checked` icon (owner directive 2026-09-15, Pass/streak): the icon lies across the MS day boundary — 2026-09-15 prod_1/d1/d2/d3 dumps show `checked` + active `Check in` together and the card went unclicked all day | gate removed in `read_tiles` (button text = due) and in `check_in` (no early `already`); locked/credited day taps are inert, sweep costs ~20 s |
 | Check-in on accounts without the `checked` alt-text renders `UNCONFIRMED`, best-effort, never fails (d2 = streak-ineligible account) | d2 run 19:47 |
 
 Search credit caveat: mobile SERP credit is proven ONLY on day-0 fresh accounts

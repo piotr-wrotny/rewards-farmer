@@ -590,9 +590,15 @@ class BingMobileFlow:
         WebView-handled rings; a tap on a locked/future day is inert, so the
         sweep is safe and self-healing regardless of which day is due."""
         xml = self.d.dump_hierarchy()
-        if CHECKED_ICON.search(xml):
-            log("check-in: already checked in today (checked icon present)")
-            return "already"
+        # Owner directive 2026-09-15 (Pass/streak card): we ATTEMPT the card click
+        # every single run, day after day — never gated on the 'checked' icon.
+        # Rationale: on 2026-09-15 prod_1/d1/d2/d3 skipped the card entirely
+        # (checked icon present, button still rendered in the dumps) and we cannot
+        # tell an uncredited today-ring from a credited one without clicking.
+        # Taps on credited/locked day cells are inert, so the sweep is safe.
+        already = CHECKED_ICON.search(xml) is not None
+        if already:
+            log("check-in: 'checked' icon present — sweeping anyway (owner directive)")
         m = re.search(r'<node[^>]*text="' + CHECKIN_TEXT + r'"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', xml)
         if not m:
             log("check-in: 'Check in' node not found — skipping")
@@ -1059,20 +1065,25 @@ class BingMobileFlow:
         for m in self.TILE_RTE.finditer(joined):
             t["rte"] = (int(m.group(1)), int(m.group(2)))
         t["cards"] = len({m.group(1) for m in ACTIVITY_CARD.finditer(joined)})
-        t["checkin"] = CHECKED_ICON.search(joined) is None and \
-            ('text="' + CHECKIN_TEXT + '"') in joined
+        # Owner directive 2026-09-15 (Pass/streak): button text present = sweep
+        # due, EVERY day, icon or not — the card is clicked daily by design.
+        t["checkin"] = ('text="' + CHECKIN_TEXT + '"') in joined
         if rendered:  # RecyclerView drops off-screen nodes — check_in/cards
             for _ in range(4):  # stages tap what they see: restore page top
                 self.swipe(0.5, 0.28, 0.5, 0.78, "tiles-top")
                 time.sleep(1)
         return t
-    def all_terminal(self, tiles):
-        """True ONLY on a rendered page where every tile shows its done-signal."""
+    def all_terminal(self, tiles, checkin_done=False):
+        """True ONLY on a rendered page where every tile shows its done-signal.
+        checkin_done: the sweep already ran THIS run (owner directive is one
+        attempt per run, not per round — without this, streak-ineligible
+        accounts like d2 never render the done-signal and burn all 6 rounds)."""
         if not tiles.get("rendered"):
             return False
         search_done = tiles["search"] is None or tiles["search"][0] >= tiles["search"][1]
         rte_done = tiles["rte"] is None or tiles["rte"][0] >= tiles["rte"][1]
-        return search_done and rte_done and tiles["cards"] == 0 and not tiles["checkin"]
+        return (search_done and rte_done and tiles["cards"] == 0
+                and (checkin_done or not tiles["checkin"]))
 
     def daily_flow(self, rte_max=60, search_safety_cap=10, max_rounds=6):
         """Tile-driven daily chain: loop { read tiles -> act ONLY on active tiles
@@ -1088,6 +1099,7 @@ class BingMobileFlow:
                 return None
 
         results = {"rounds": []}
+        checkin_attempted = False  # owner directive: one card attempt per RUN
         p0 = _points()
         log(f"daily: start daily_points={p0}")
         prev_points = p0
@@ -1097,13 +1109,13 @@ class BingMobileFlow:
                 log(f"round {rnd}: rewards page unreachable — stopping")
                 break
             tiles = self.read_tiles()
-            log(f"round {rnd}: tiles={tiles}")
-            if self.all_terminal(tiles):
+            if self.all_terminal(tiles, checkin_attempted):
                 log(f"round {rnd}: ALL TILES TERMINAL — done")
                 break
             rr = {}
-            if tiles["checkin"]:
+            if tiles["checkin"] and not checkin_attempted:
                 rr["checkin"] = self.check_in()
+                checkin_attempted = True
             if tiles["cards"]:
                 rr["cards"] = self.misc_cards()
             if tiles["rte"] and tiles["rte"][0] < tiles["rte"][1]:
