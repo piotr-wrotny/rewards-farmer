@@ -15,11 +15,75 @@ SNAP="$HOME/profile-snapshots"
 ADB="${ADB:-adb}"
 LOGS="$ROOT/logs"; mkdir -p "$LOGS"
 CONT="${BING_CONT:-redroid}"; PORT="${BING_PORT:-5555}"
+INNER_PORT="${BING_INNER_PORT:-5555}"
+OWNERSHIP_LOCK=/tmp/bing-profile-ownership.lock
 
 serial() { echo "127.0.0.1:$1"; }
 die() { echo "$*" >&2; exit "${2:-2}"; }
-current() { docker inspect -f '{{range .Mounts}}{{.Source}}{{end}}' "$CONT" 2>/dev/null | xargs -r basename; }
+current() {
+  local mount
+  mount="$(container_data_mount "$CONT")"
+  [ -n "$mount" ] || return 1
+  basename "$mount"
+}
 user_running() { $ADB -s "$(serial $PORT)" shell "dumpsys activity users 2>/dev/null | grep -m1 'User #0'" 2>/dev/null | grep -q RUNNING; }
+
+canon_path() {
+  local p="$1"
+  if command -v realpath >/dev/null 2>&1; then
+    realpath -m "$p"; return
+  fi
+  if command -v readlink >/dev/null 2>&1; then
+    readlink -f "$p" 2>/dev/null && return
+  fi
+  (cd "$p" 2>/dev/null && pwd -P) || echo "$p"
+}
+
+profile_path() {
+  local p="$1" v="$VAR/$p"
+  [ -d "$v" ] || die "no variant $p (known: $(ls "$VAR" 2>/dev/null | tr '\n' ' '))" 3
+  canon_path "$v"
+}
+
+container_data_mount() {
+  local c="$1"
+  docker inspect -f '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Source}}{{end}}{{end}}' "$c" 2>/dev/null || true
+}
+
+assert_profile_unowned() {
+  local profile="$1" allow_cont="$2"
+  local target
+  target="$(profile_path "$profile")"
+  local ids
+  ids="$(docker ps -aq 2>/dev/null || true)"
+  [ -n "$ids" ] || return 0
+  while IFS= read -r cid; do
+    [ -n "$cid" ] || continue
+    local name src src_canon state restart
+    name="$(docker inspect -f '{{.Name}}' "$cid" 2>/dev/null | sed 's#^/##')"
+    [ -n "$name" ] || continue
+    [ "$name" = "$allow_cont" ] && continue
+    src="$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Source}}{{end}}{{end}}' "$cid" 2>/dev/null || true)"
+    [ -n "$src" ] || continue
+    src_canon="$(canon_path "$src")"
+    if [ "$src_canon" = "$target" ]; then
+      state="$(docker inspect -f '{{.State.Status}}' "$cid" 2>/dev/null || echo unknown)"
+      restart="$(docker inspect -f '{{.HostConfig.RestartPolicy.Name}}' "$cid" 2>/dev/null || echo unknown)"
+      die "profile '$profile' already mounted by container '$name' (state=$state restart=$restart mount=$src_canon)" 3
+    fi
+  done <<EOF
+$ids
+EOF
+}
+
+verify_slot_mapping() {
+  local profile="$1" target mount
+  target="$(profile_path "$profile")"
+  mount="$(container_data_mount "$CONT")"
+  [ -n "$mount" ] || die "container $CONT has no /data mount; aborting" 3
+  mount="$(canon_path "$mount")"
+  [ "$mount" = "$target" ] || die "container $CONT mounted $mount, expected $target for profile $profile" 3
+}
 
 # Boot-ready means user RUNNING (sys.boot_completed lies; gotchas #6).
 wait_ready() {
@@ -30,17 +94,33 @@ wait_ready() {
 }
 
 ensure_container() {
-  local p="$1" v="$VAR/$1"
-  [ -d "$v" ] || die "no variant $p (known: $(ls "$VAR" 2>/dev/null | tr '\n' ' '))" 3
-  if [ "$(current)" = "$p" ] && [ "$(docker inspect -f '{{.State.Running}}' "$CONT" 2>/dev/null)" = true ]; then
+  local p="$1" v running
+  v="$VAR/$p"
+  running="$(docker inspect -f '{{.State.Running}}' "$CONT" 2>/dev/null || true)"
+  if [ "$(current)" = "$p" ] && [ "$running" = true ]; then
+    verify_slot_mapping "$p"
+    assert_profile_unowned "$p" "$CONT"
+    $ADB connect "$(serial $PORT)" >/dev/null 2>&1
+    user_running && return 0
+  fi
+
+  exec 8>"$OWNERSHIP_LOCK"; flock 8
+  assert_profile_unowned "$p" "$CONT"
+
+  running="$(docker inspect -f '{{.State.Running}}' "$CONT" 2>/dev/null || true)"
+  if [ "$(current)" = "$p" ] && [ "$running" = true ]; then
+    verify_slot_mapping "$p"
+    assert_profile_unowned "$p" "$CONT"
     $ADB connect "$(serial $PORT)" >/dev/null 2>&1
     user_running && return 0
   fi
   docker rm -f "$CONT" >/dev/null 2>&1 || true
-  # NOTE: publish 5555 only — host adb server owns 5037 (gotchas #4).
+  # NOTE: publish adbd only (default container port 5555) — host adb server owns 5037.
   docker run -d --name "$CONT" --privileged -v "$v:/data" \
-    -p 127.0.0.1:$PORT:$PORT --restart unless-stopped "$IMG" "${PROPS[@]}" >/dev/null \
+    -p 127.0.0.1:$PORT:$INNER_PORT --restart unless-stopped "$IMG" "${PROPS[@]}" >/dev/null \
     || die "docker run failed" 3
+  verify_slot_mapping "$p"
+  assert_profile_unowned "$p" "$CONT"
   $ADB disconnect "$(serial $PORT)" >/dev/null 2>&1 || true   # stale state (gotchas #5)
   wait_ready || die "boot timeout on variant $p (user never RUNNING — see docs/re-droid-gotchas.md #1)" 3
 }
@@ -96,7 +176,8 @@ case "$cmd" in
     [ "$prof" = test ] || die "clear is allowed only for profile test (prod would log out)" 3
     LOCK=/tmp/bing-$PORT.lock; exec 9>"$LOCK"; flock 9
     ensure_container "$prof"
-    "$PY" "$DRIVER" --serial "$(serial $PORT)" --profile test --only screenshot --clear \
+    "$PY" "$DRIVER" --serial "$(serial $PORT)" --server-serial "$(serial $PORT)" \
+      --profile test --only screenshot --clear \
       || exit $?
     echo "cleared $prof" ;;
   snapshot)

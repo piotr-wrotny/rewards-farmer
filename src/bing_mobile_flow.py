@@ -22,7 +22,8 @@ Usage (normally via ./bing.sh on the server; from the Windows dev machine open t
 SSH tunnel first):
     ssh -N -L 15555:127.0.0.1:5555 piotr.wrotny@10.17.103.115
     python src/bing_mobile_flow.py [--profile P] [--only ACTION] [--iters N]
-                                   [--debug|--no-debug] [--clear] [--serial S] [--server U@H]
+                                   [--debug|--no-debug] [--clear] [--serial S]
+                                   [--server U@H] [--server-serial HOST:PORT]
 
     --only    full|search|rewards|read-to-earn|misc-cards|screenshot (default full)
     --clear   wipe Bing app data on the server (pm clear) so the next attempt starts
@@ -102,6 +103,13 @@ ART_DIR = os.path.join(ROOT, "artifacts")  # artifacts/<profile>/{screenshots,ui
 def profile_dirs(profile):
     base = os.path.join(ART_DIR, profile)
     return os.path.join(base, "screenshots"), os.path.join(base, "ui")
+
+
+def normalize_serial(serial):
+    host, _, port_s = serial.partition(":")
+    if not host or not port_s:
+        raise InfraError(f"invalid adb serial format: {serial!r} (expected host:port)")
+    return f"{host}:{port_s}"
 
 
 class InfraError(RuntimeError):
@@ -223,9 +231,10 @@ class BingMobileFlow:
             time.sleep(2)
 
     # ------------------------------------------------------------- flow steps
-    def clear_app_data(self, server):
+    def clear_app_data(self, server, server_serial=None):
         """Dev reset: wipe Bing app data so FRE/onboarding reappear for a fresh attempt."""
-        cmd = ["ssh", server, f"adb -s 127.0.0.1:5555 shell pm clear {PKG}"]
+        serial = normalize_serial(server_serial or self.serial)
+        cmd = ["ssh", server, f"adb -s {serial} shell pm clear {PKG}"]
         log(f"[CLEAR] {' '.join(cmd)}")
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
         log(f"[CLEAR] rc={r.returncode} out={r.stdout.strip()}")
@@ -1140,6 +1149,7 @@ class BingMobileFlow:
 
 def check_serial(serial):
     """Make sure adb sees the ReDroid serial (tunnel port must be forwarded already)."""
+    serial = normalize_serial(serial)
     adb = shutil.which("adb") or os.path.join(ROOT, "bin", "platform-tools", "adb.exe")
     host, _, port_s = serial.partition(":")
     if host == "127.0.0.1" and port_s:
@@ -1163,6 +1173,8 @@ def main():
     p = argparse.ArgumentParser(description="Bing mobile flow on ReDroid, per profile variant")
     p.add_argument("--serial", default="127.0.0.1:15555")
     p.add_argument("--server", default="piotr.wrotny@10.17.103.115", help="ssh target for --clear")
+    p.add_argument("--server-serial", default=None,
+                   help="adb serial on remote server for --clear (defaults to --serial)")
     p.add_argument("--iters", type=int, default=10, help="articles to read")
     p.add_argument("--query", default="hello world", help="search query for the search step")
     p.add_argument("--profile", default="test",
@@ -1188,7 +1200,7 @@ def main():
             sys.exit(3)
         flow = BingMobileFlow(a.serial, debug=debug, query=a.query, profile=a.profile)
         if a.clear:
-            flow.clear_app_data(a.server)
+            flow.clear_app_data(a.server, a.server_serial)
         result = flow.run_only(a.only, a.iters)
         log(f"DONE state={result['state']} articles_read={result['articles_read']}")
         log(f"evidence: {profile_dirs(a.profile)[0]}")

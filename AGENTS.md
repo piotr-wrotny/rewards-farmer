@@ -64,7 +64,9 @@ registry is the single source of truth; `cron/README.md` is history).
   - `use <profile>` — switch active variant (recreates container on that volume).
     Fail-fast (`flock -n`) on the device lock when a `run` holds it → rc 3 "device
     busy" (added 2026-09-14 after a mid-run switch corrupted a soak; it also
-    validates the variant dir exists and verifies the switch landed).
+    validates the variant dir exists and verifies the switch landed). Multi-instance
+    guard (2026-10): mount ownership is now validated before (re)create/switch — one
+    writable `/data` profile may belong to one container only, else fail-closed rc 3.
   - `run daily|full|search|rewards|read-to-earn|misc-cards|screenshot [--profile P]
     [--iters N] [--debug|--no-debug]` — BLOCKING flock: cron lines queue behind a
     manual run instead of colliding. `--iters` is ignored for `daily`.
@@ -73,7 +75,8 @@ registry is the single source of truth; `cron/README.md` is history).
     `redroid-factory`, lock 5556). **Never** for signed-in profiles: snapshot a
     prod volume with a manual busybox tar while the container is stopped
     (`docs/profile-provisioning-mobile.md`).
-  - Env overrides: `BING_PY`, `BING_VAR`, `BING_CONT`, `BING_PORT`, `ADB`.
+  - Env overrides: `BING_PY`, `BING_VAR`, `BING_CONT`, `BING_PORT`,
+    `BING_INNER_PORT` (container adbd port, default 5555), `ADB`.
 - `src/bing_mobile_flow.py` — the driver (imports stdlib + uiautomator2 only).
 - `nouns.txt` — phrase-pool seed (mobile + web both read it).
 - `profiles/README.md` — registry: profile ↔ volume ↔ status ↔ cron grid.
