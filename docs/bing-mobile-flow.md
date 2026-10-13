@@ -66,8 +66,8 @@ tab hygiene from the old emulator flow matters); tab selectors (`Tabs`, `Tab: <n
 ### Read-to-earn e2e (port of `deploy/read_to_earn.py`, verified 2026-09-01)
 
 `./bing.sh run read-to-earn --profile prod_2` — session model per
-`docs/superpowers/specs/2026-09-01-read-to-earn-port-spec.md` (5/session, 20 sessions,
-60 total, global seen-set, idle cap 8, `cleanup_tabs` terminal invariant).
+the production read-to-earn contract (5/session, 20 sessions, 60 total, global
+seen-set, idle cap 8, `cleanup_tabs` terminal invariant).
 
 | Claim | Evidence |
 |---|---|
@@ -181,8 +181,7 @@ Cadence ~26 s/search (trim settle/dwell next pass); searches run LAST.
 
 The emulator-era article heuristics (video/ad skip, source-line pairing) were ported
 verbatim from `deploy/read_to_earn.py` and now belong to the production map (reachable on
-`prod_2`). Full old-flow spec for the 1:1 port: produced by EmulatorFlowSpec analysis —
-see `docs/superpowers/specs/` follow-up.
+`prod_2`).
 
 
 ## Known states / gotchas
@@ -193,5 +192,5 @@ see `docs/superpowers/specs/` follow-up.
   on a fresh logged-out install — use the profile-menu path instead (step 11).
 - `ToModifyMarketPopupActivity` blocks home after FRE **only when the container has
   network** (PoC had none). Handled at step 4.
-- DNS: container needs `androidboot.redroid_net_ndns=2` + resolver IPs (see
-  Proof-Of-Concept-Artifacts/docs/runtime-info.md — verified fix).
+- DNS: container needs `androidboot.redroid_net_ndns=2` + resolver IPs (verified
+  in production; see `docs/re-droid-gotchas.md`).

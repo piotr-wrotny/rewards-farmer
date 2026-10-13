@@ -62,8 +62,7 @@ that is empty converts a restore into a factory reset.
 
 `androidboot.redroid_net_ndns=2 androidboot.redroid_net_dns1=172.20.0.41
 androidboot.redroid_net_dns2=172.20.0.42` are required; without `ndns` netd ignores the
-DNS props and every SERP is `ERR_NAME_NOT_RESOLVED` (see
-Proof-Of-Concept-Artifacts/docs/runtime-info.md).
+DNS props and every SERP is `ERR_NAME_NOT_RESOLVED` (verified on production runs).
 
 ## 4. Host adb server owns 5037 — do not publish container 5037
 

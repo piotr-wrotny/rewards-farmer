@@ -56,7 +56,7 @@ reader for the someday observer idea), `close_article_tab_return_to_feed()`.
 
 Schedule: 13 mobile lines on a 110-min even grid (01:10 prod_1 … 23:10 domena11) +
 the two web lines. Canonical grid: **`profiles/README.md` § Cron grid** (the
-registry is the single source of truth; `cron/README.md` is history).
+registry is the single source of truth).
 
 ## LIVE — mobile core (the farm)
 
@@ -67,26 +67,40 @@ registry is the single source of truth; `cron/README.md` is history).
     validates the variant dir exists and verifies the switch landed). Multi-instance
     guard (2026-10): mount ownership is now validated before (re)create/switch — one
     writable `/data` profile may belong to one container only, else fail-closed rc 3.
-  - `run daily|full|search|rewards|read-to-earn|misc-cards|screenshot [--profile P]
-    [--iters N] [--debug|--no-debug]` — BLOCKING flock: cron lines queue behind a
-    manual run instead of colliding. `--iters` is ignored for `daily`.
+  - `run daily|full|search|rewards|read-to-earn|misc-cards|required-searches|screenshot|points-snapshot [--profile P]
+    [--iters N] [--debug|--no-debug] [--post-run-cleanup MODE]` — BLOCKING flock:
+    cron lines queue behind a manual run instead of colliding. `--iters` is ignored
+    for `daily`. Optional `--daily-target` gate in driver (when provided: below
+    target = `daily_incomplete`, rc 2). Post-run cleanup modes: `keep-running`
+    (default), `return-home`, `force-stop`, `stop-container` (stop worker slot
+    container after run; no `pm clear`, no container restart).
   - `current | status`; `clear` (pm clear — profile `test` ONLY, rc 3 otherwise);
     `snapshot <name>` — freezes the **factory** volume only (separate container
     `redroid-factory`, lock 5556). **Never** for signed-in profiles: snapshot a
     prod volume with a manual busybox tar while the container is stopped
     (`docs/profile-provisioning-mobile.md`).
   - Env overrides: `BING_PY`, `BING_VAR`, `BING_CONT`, `BING_PORT`,
-    `BING_INNER_PORT` (container adbd port, default 5555), `ADB`.
+    `BING_INNER_PORT` (container adbd port, default 5555),
+    `BING_POST_RUN_CLEANUP`, `BING_DAILY_TARGET` (optional gate), `ADB`.
 - `src/bing_mobile_flow.py` — the driver (imports stdlib + uiautomator2 only).
 - `nouns.txt` — phrase-pool seed (mobile + web both read it).
+- `scripts/points_monitor.sh` — snapshot/diff monitor for per-profile
+  `total_points` and optional end-of-day web bonus-claim sweep before final
+  snapshot (`claim-and-snapshot`), plus `check-full` for final `daily_points`
+  target validation.
+- `tools/web_runtime_stats.py` — compute average/median/max runtime for daily web
+  runs from `logs/web-run*.log` filenames + mtime.
 - `profiles/README.md` — registry: profile ↔ volume ↔ status ↔ cron grid.
   `docs/profile-accounts.md` — identities. Provisioning (current era, variant-direct
   seeding + user login via scrcpy): `docs/profile-provisioning-mobile.md`.
 - Flow selector map: `docs/bing-mobile-flow.md`; ReDroid hazards:
   `docs/re-droid-gotchas.md` (ndns DNS props, publish 5555 only, RUNNING_UNLOCKED).
 - Logs: `logs/bing-<profile>-daily-<ts>.log`; completion markers
-  `daily: end daily_points=A/B->C/D` and `DONE state=daily_done`.
-- Tests: `tests/test_bing.sh` covers `bing.sh` guards (fakes adb/python/container).
+  `daily: end daily_points=A/B->C/D`, `INCOMPLETE state=daily_incomplete ...`
+  (below target), and `DONE state=daily_done` (target met).
+- Tests: `tests/test_bing.sh` covers core guards; `tests/test_bing_multi_instance.sh`
+  covers mount/slot ownership checks; `tests/test_bing_post_run_cleanup.sh` covers
+  cleanup modes and exit-code preservation (all with fake adb/python/container shims).
 
 ## LIVE — web layer (required for full coverage, rolling out to all prods)
 Two stacks share one server. Owner decision 2026-09-14: **every prod account must
@@ -158,11 +172,32 @@ identity-proven, launches ordered by owner AFTER provisioning (phase 2).
 | `tools/rewards_full_crawl.py`, `rewards_act.py`, `quiz_step.py`, `d3_tile_inventory.py` | live-device probes from the tile-map investigation (`docs/ideas/2026-09-09-d3-tile-map.md`) — import the mobile driver | keep: still the best diagnostic kit |
 | `scripts/factory.ps1` | Windows scrcpy login/snapshot driver — superseded by variant-direct seeding (`docs/profile-provisioning-mobile.md`) for every profile since d4 | keep as fallback; use factory volume 5556 flow only when reseeding the baseline |
 | `src/fitts_law.py`, `recordpress.py`, `analyze_keypresses.py`, `visualize_*.py`, `check_selectors.py`, `random_image_for_visual_search.py` | upstream PoC/dev tooling, zero live imports | keep (upstream heritage; deps in pyproject serve only these + web) |
-| `Proof-Of-Concept-Artifacts/` | self-contained PoC evidence package (UI dumps, screenshots, ADB ps1 wrappers); `docs/runtime-info.md` is cited by live docs | keep; ignore README drift (`back.ps1` never existed) |
-| `docs/superpowers/` | original plans/specs (2026-09-01 era) | historical record |
-| `cron/README.md` | grid history — describes the pre-2026-09-14 8×3 h grid | superseded by `profiles/README.md` § Cron grid |
 | `README.md` | upstream community readme (Ollama, poetry, local Edge) — says nothing about the farm | provenance only; read `AGENTS.md` instead |
 | `docs/ideas/*` | decision records: migration (done; web-retirement end-state NOT yet reached), d2 (historical), d3 tile map (canonical), points-reader-api (**the open someday-item**) | keep |
+
+### Context-pruning candidates (owner-requested triage, 2026-10-13)
+
+Executed cleanup (removed from repo on owner request):
+
+- `docs/superpowers/plans/*`
+- `docs/superpowers/specs/*`
+- `cron/README.md`
+- `Proof-Of-Concept-Artifacts/`
+
+Keep for operations/diagnostics (not runtime-critical, but still useful during
+incidents and profile recovery):
+
+- `tools/rewards_full_crawl.py`, `tools/rewards_act.py`, `tools/quiz_step.py`,
+  `tools/d3_tile_inventory.py` (live-device probes used to explain tile state)
+- `scripts/factory.ps1` (fallback login/snapshot path when variant-direct seeding
+  is unavailable)
+
+Optional cleanup wave (no runtime imports today, but only remove alongside
+dependency/docs cleanup):
+
+- `src/fitts_law.py`, `src/recordpress.py`, `src/analyze_keypresses.py`,
+  `src/visualize_trajectory.py`, `src/visualize_bezier_distortions.py`,
+  `src/check_selectors.py`, `src/random_image_for_visual_search.py`
 
 ## Operational hazards (learned, not hypothetical)
 
@@ -180,3 +215,45 @@ identity-proven, launches ordered by owner AFTER provisioning (phase 2).
 - Open watch item (2026-09-15): d6 streak — post-sweep probe showed `Check in`
   still present; verify the streak card credited on the next day's run.
 - Windows dev box: `py -3` has pytest/ollama; never use the hermes venv python.
+
+## 2026-10-13 incident findings + approved parallel recovery procedure
+
+Observed on real cron/rerun evidence (not theoretical):
+
+- Web stack is generally stable and fast: 14-day sample of `web-run*.log` gave
+  ~7.7 min average per profile (p95 ~8.4 min). Web login checks for unstable
+  domains (`d3/d7/d9/d10`) returned `state=signed_in` (rc 0), so failures were
+  not caused by web authentication loss.
+- Mobile failures split into three classes:
+  1. **Ownership/mount conflicts** (hard fail, rc 3), notably `domena3-prod`
+     when `redroid-factory` was mounted onto that profile path.
+  2. **Flow fatal** (`RuntimeError: home screen not reachable`).
+  3. **False terminal** (`ALL TILES TERMINAL` while daily points stayed far
+     below 120/120).
+
+Approved recovery approach for unstable domains: **parallel 3-slot batches with
+strict per-profile precheck and postcheck**.
+
+1. Pre-batch hygiene: stop worker containers (`redroid`, `redroid-a/b/c`), keep
+   only `redroid-factory`.
+2. Per profile precheck (`points-snapshot`):
+   - verifies profile is clickable and readable (total+daily points),
+   - fail closed on ownership/mount mismatch (do not start `daily`).
+3. Run `daily` on mapped slot (`BING_CONT` + `BING_PORT`) with cleanup mode
+   `stop-container`.
+4. Postcheck (`points-snapshot`) for measured end-state.
+5. Report per profile:
+   `pre_total/pre_daily -> post_total/post_daily`, plus `daily_rc` and note.
+
+Practical decision rule from this incident:
+
+- If precheck fails rc 3, **fix slot/mount integrity first**; rerunning flow
+  alone is noise.
+- If `daily_rc=0` but post `daily_points<120/120`, treat as incomplete and
+  rerun only after checking tiles/home-state evidence.
+- If `daily_rc!=0` with post snapshot available, keep the snapshot as truth and
+  classify as flow instability, not auth loss by default.
+
+Validated by rerun evidence on unstable set (`d2,d3,d4,d5,d6,d7,d8,d9,d10,d11`):
+6 domains reached 120/120 (`d2,d4,d5,d6,d8,d11`), while `d3` failed precheck
+(mount conflict) and `d7/d9/d10` remained partial despite progress.
