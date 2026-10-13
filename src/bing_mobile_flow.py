@@ -6,7 +6,7 @@ Profile `test` runs WITHOUT a Microsoft account (pm clear allowed), so first-run
 and the handlers below are a safety net, not flow steps. Full step map + test/prod
 split: docs/bing-mobile-flow.md.
 
-Path (per Proof-Of-Concept-Artifacts): launch -> FRE dismiss -> home ready-check ->
+Path: launch -> FRE dismiss -> home ready-check ->
 search -> results (BrowserActivity) -> Rewards (profile menu) -> Read to earn attempt ->
 article loop -> evidence in artifacts/.
 Every run is keyed to a profile variant (test|prod_1|prod_2|...): evidence lands in
@@ -110,6 +110,24 @@ def normalize_serial(serial):
     if not host or not port_s:
         raise InfraError(f"invalid adb serial format: {serial!r} (expected host:port)")
     return f"{host}:{port_s}"
+
+
+def parse_daily_points_ratio(value):
+    if not value:
+        return None, None
+    m = re.fullmatch(r"\s*(\d+)\s*/\s*(\d+)\s*", str(value))
+    if not m:
+        return None, None
+    return int(m.group(1)), int(m.group(2))
+
+
+def daily_target_met(result, target):
+    points = (result or {}).get("daily_points", {})
+    end = points.get("end")
+    got, cap = parse_daily_points_ratio(end)
+    if got is None or cap is None:
+        return False, str(end)
+    return got >= target and cap >= target, f"{got}/{cap}"
 
 
 class InfraError(RuntimeError):
@@ -723,8 +741,7 @@ class BingMobileFlow:
                 break
         return done
     # ------------------------------------------------------------- tab hygiene
-    # Verbatim port of deploy/read_to_earn.py :48-108 (spec:
-    # docs/superpowers/specs/2026-09-01-read-to-earn-port-spec.md §3).
+    # Verbatim port of deploy/read_to_earn.py :48-108.
     def open_tabs_manager(self):
         for _ in range(3):
             if self.d(description="Tabs").exists:
@@ -998,6 +1015,24 @@ class BingMobileFlow:
 
     def run_only(self, only, iterations):
         self.to_home()
+        if only == "points-snapshot":
+            total = None
+            daily = None
+            try:
+                total = self.total_points()
+            except Exception as e:  # noqa: BLE001
+                log(f"total_points readout failed: {type(e).__name__}: {e}")
+            try:
+                daily = self.daily_points()
+            except Exception as e:  # noqa: BLE001
+                log(f"daily_points readout failed: {type(e).__name__}: {e}")
+            log(f"points snapshot: total_points={total} daily_points={daily}")
+            return {
+                "state": "points_snapshot",
+                "articles_read": 0,
+                "total_points": total,
+                "daily_points": {"start": daily, "end": daily},
+            }
         if only == "screenshot":
             return self.screenshot_step()
         if only == "search":
@@ -1181,11 +1216,13 @@ def main():
                    help="profile variant (test|prod_1|prod_2|...); evidence -> artifacts/<profile>/")
     p.add_argument("--only", default="full",
                    choices=("full", "search", "rewards", "read-to-earn", "misc-cards",
-                            "required-searches", "daily", "screenshot"))
+                            "required-searches", "daily", "screenshot", "points-snapshot"))
     p.add_argument("--debug", action=argparse.BooleanOptionalAction, default=None,
                    help="screenshot every executed action (default: on for profile=test)")
     p.add_argument("--clear", action="store_true",
                    help="wipe Bing app data first (pm clear; profile=test only)")
+    p.add_argument("--daily-target", type=int, default=None,
+                   help="optional required daily points for --only daily success")
     a = p.parse_args()
     debug = a.debug if a.debug is not None else a.profile == "test"
 
@@ -1202,6 +1239,16 @@ def main():
         if a.clear:
             flow.clear_app_data(a.server, a.server_serial)
         result = flow.run_only(a.only, a.iters)
+        if a.only == "daily" and a.daily_target is not None:
+            met, observed = daily_target_met(result, a.daily_target)
+            result["daily_target"] = a.daily_target
+            result["daily_target_met"] = met
+            if not met:
+                result["state"] = "daily_incomplete"
+                log(f"INCOMPLETE state=daily_incomplete daily_target={a.daily_target} observed={observed}")
+                log(f"evidence: {profile_dirs(a.profile)[0]}")
+                print(json.dumps({"profile": a.profile, **result}, ensure_ascii=False))
+                sys.exit(2)
         log(f"DONE state={result['state']} articles_read={result['articles_read']}")
         log(f"evidence: {profile_dirs(a.profile)[0]}")
         print(json.dumps({"profile": a.profile, **result}, ensure_ascii=False))

@@ -43,6 +43,33 @@ class SerialNormalizationTests(unittest.TestCase):
             bmf.normalize_serial("127.0.0.1")
 
 
+class DailyTargetGateTests(unittest.TestCase):
+    def test_parse_daily_points_ratio_ok(self):
+        self.assertEqual(bmf.parse_daily_points_ratio("120/120"), (120, 120))
+
+    def test_parse_daily_points_ratio_rejects_unknown(self):
+        self.assertEqual(bmf.parse_daily_points_ratio(None), (None, None))
+        self.assertEqual(bmf.parse_daily_points_ratio("n/a"), (None, None))
+
+    def test_daily_target_met_true(self):
+        result = {"daily_points": {"end": "120/120"}}
+        met, observed = bmf.daily_target_met(result, 120)
+        self.assertTrue(met)
+        self.assertEqual(observed, "120/120")
+
+    def test_daily_target_met_false_on_under_target(self):
+        result = {"daily_points": {"end": "117/120"}}
+        met, observed = bmf.daily_target_met(result, 120)
+        self.assertFalse(met)
+        self.assertEqual(observed, "117/120")
+
+    def test_daily_target_met_false_on_missing_ratio(self):
+        result = {"daily_points": {"end": "unknown"}}
+        met, observed = bmf.daily_target_met(result, 120)
+        self.assertFalse(met)
+        self.assertEqual(observed, "unknown")
+
+
 class CheckSerialTests(unittest.TestCase):
     @patch.object(bmf.shutil, "which", return_value="adb")
     def test_check_serial_rejects_wrong_slot_when_port_not_listening(self, _which):

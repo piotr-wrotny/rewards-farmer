@@ -1,5 +1,4 @@
 import logging
-import log_utils
 import os
 import random
 import sys
@@ -17,6 +16,16 @@ import llm_utils
 import mouse_trajectory
 import mimic_typing
 import element_selectors
+
+try:
+	import log_utils
+except ModuleNotFoundError:
+	class _FallbackLogUtils:
+		@staticmethod
+		def exception_summary(exc: BaseException) -> str:
+			return str(exc)
+
+	log_utils = _FallbackLogUtils()
 
 VISUAL_SEARCH_ASSET_CANDIDATES = (
 	"/data/edge-profile/visual-search-asset.jpg",
@@ -484,12 +493,46 @@ class RewardsTaskUtils:
 	def claim_bonus_points(self):
 		self.switch_to_dashboard()
 
-		self.wait_for_then_click(self.elements.get_bonus_button_on_dashboard)
-
+		before = self.read_bonus_claim_state()
+		print(f"[INFO] Bonus claim state before: {before}")
 		try:
+			self.wait_for_then_click(self.elements.get_bonus_button_on_dashboard)
 			self.wait_for_then_click(self.elements.get_claim_bonus_points_button)
 		except TimeoutException:
 			print("[WARNING] Could not find the 'Claim Bonus Points' button. There are likely no bonus points to claim at this time.")
+			print(f"[INFO] Bonus claim state after: {before}")
+			return
+
+		# Sidebar updates asynchronously after clicking claim.
+		time.sleep(2)
+		after = self.read_bonus_claim_state()
+		claimed = before.get("claim_available", False) and not after.get("claim_available", False)
+		print(f"[INFO] Bonus claim state after: {after}")
+		print(
+			"[INFO] Bonus claim result: "
+			f"claimed={claimed} before_claim_available={before.get('claim_available')} "
+			f"after_claim_available={after.get('claim_available')}"
+		)
+
+	def read_bonus_claim_state(self):
+		state = {
+			"ready_to_claim_visible": False,
+			"claim_available": False,
+		}
+
+		try:
+			self.wait_for_element(self.elements.get_bonus_button_on_dashboard, timeout=10)
+			state["ready_to_claim_visible"] = True
+		except (TimeoutException, NoSuchElementException):
+			return state
+
+		try:
+			self.wait_for_element(self.elements.get_claim_bonus_points_button, timeout=5)
+			state["claim_available"] = True
+		except (TimeoutException, NoSuchElementException):
+			state["claim_available"] = False
+
+		return state
 
 	def verify_signed_in(self) -> int:
 		"""Login probe for provisioning web profiles: the signed-in Rewards page

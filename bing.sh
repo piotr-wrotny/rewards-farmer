@@ -16,7 +16,17 @@ ADB="${ADB:-adb}"
 LOGS="$ROOT/logs"; mkdir -p "$LOGS"
 CONT="${BING_CONT:-redroid}"; PORT="${BING_PORT:-5555}"
 INNER_PORT="${BING_INNER_PORT:-5555}"
+BING_POST_RUN_CLEANUP="${BING_POST_RUN_CLEANUP:-keep-running}"
+BING_DAILY_TARGET="${BING_DAILY_TARGET:-}"
 OWNERSHIP_LOCK=/tmp/bing-profile-ownership.lock
+RUN_CLEANUP_PENDING=0
+RUN_CLEANUP_RAN=0
+RUN_EXIT_CODE=""
+RUN_CLEANUP_MODE=""
+RUN_CLEANUP_PROFILE=""
+RUN_CLEANUP_ACTION=""
+RUN_CLEANUP_SERIAL=""
+RUN_PROFILE_LOCK_DIR=""
 
 serial() { echo "127.0.0.1:$1"; }
 die() { echo "$*" >&2; exit "${2:-2}"; }
@@ -40,7 +50,8 @@ canon_path() {
 }
 
 profile_path() {
-  local p="$1" v="$VAR/$p"
+  local p="$1"
+  local v="$VAR/$p"
   [ -d "$v" ] || die "no variant $p (known: $(ls "$VAR" 2>/dev/null | tr '\n' ' '))" 3
   canon_path "$v"
 }
@@ -93,6 +104,125 @@ wait_ready() {
   done; return 1
 }
 
+validate_post_run_cleanup_mode() {
+  case "$1" in
+    keep-running|return-home|force-stop|stop-container) return 0 ;;
+    *) die "invalid post-run cleanup mode '$1' (allowed: keep-running|return-home|force-stop|stop-container)" 2 ;;
+  esac
+}
+
+verify_run_integrity() {
+  local profile="$1" slot_serial="$2"
+  verify_slot_mapping "$profile"
+  assert_profile_unowned "$profile" "$CONT"
+  $ADB connect "$slot_serial" >/dev/null 2>&1 \
+    || die "integrity check failed: adb connect $slot_serial" 3
+}
+
+post_run_cleanup() {
+  local mode="$1" profile="$2" action="$3" run_rc="$4" slot_serial="$5"
+  local started ended duration_s outcome cleanup_rc out cleanup_action
+  started="$(date +%s)"
+  outcome=ok
+  cleanup_rc=0
+  cleanup_action=""
+
+  case "$mode" in
+    keep-running)
+      ;;
+    return-home)
+      cleanup_action="home"
+      ;;
+    force-stop)
+      cleanup_action="force-stop"
+      ;;
+    stop-container)
+      cleanup_action="stop-container"
+      ;;
+  esac
+
+  case "$cleanup_action" in
+    "")
+      ;;
+    home)
+      if out="$($ADB -s "$slot_serial" shell input keyevent KEYCODE_HOME 2>&1)"; then
+        outcome=ok
+      else
+        cleanup_rc=$?
+        outcome=error
+      fi
+      ;;
+    force-stop)
+      if out="$($ADB -s "$slot_serial" shell am force-stop com.microsoft.bing 2>&1)"; then
+        outcome=ok
+      else
+        cleanup_rc=$?
+        outcome=error
+      fi
+      ;;
+    stop-container)
+      if out="$(docker stop -t 30 "$CONT" 2>&1)"; then
+        outcome=ok
+      else
+        cleanup_rc=$?
+        outcome=error
+      fi
+      ;;
+  esac
+
+  ended="$(date +%s)"
+  duration_s=$((ended - started))
+  echo "[CLEANUP] mode=$mode profile=$profile action=$action job_rc=$run_rc outcome=$outcome duration_s=$duration_s"
+  if [ -n "${out:-}" ]; then
+    echo "[CLEANUP] detail=${out//$'\n'/; }"
+  fi
+  if [ "$cleanup_rc" -ne 0 ]; then
+    echo "[CLEANUP] warning=cleanup_failed rc=$cleanup_rc (job exit preserved as $run_rc)" >&2
+  fi
+}
+
+run_exit_trap() {
+  local trap_rc="$?"
+  if [ "$RUN_CLEANUP_PENDING" -eq 1 ] && [ "$RUN_CLEANUP_RAN" -eq 0 ]; then
+    local rc="${RUN_EXIT_CODE:-$trap_rc}"
+    post_run_cleanup "$RUN_CLEANUP_MODE" "$RUN_CLEANUP_PROFILE" "$RUN_CLEANUP_ACTION" "$rc" "$RUN_CLEANUP_SERIAL"
+    RUN_CLEANUP_RAN=1
+  fi
+  if [ -n "$RUN_PROFILE_LOCK_DIR" ] && [ -d "$RUN_PROFILE_LOCK_DIR" ]; then
+    rmdir "$RUN_PROFILE_LOCK_DIR" >/dev/null 2>&1 || true
+    RUN_PROFILE_LOCK_DIR=""
+  fi
+}
+
+run_signal_trap() {
+  case "$1" in
+    INT) RUN_EXIT_CODE=130 ;;
+    TERM) RUN_EXIT_CODE=143 ;;
+    *) RUN_EXIT_CODE=1 ;;
+  esac
+  exit "$RUN_EXIT_CODE"
+}
+
+acquire_profile_lock() {
+  local profile="$1"
+  local lock_dir="/tmp/bing-profile-$PORT-$profile.lockdir"
+  local pid_file="$lock_dir/pid"
+  if ! mkdir "$lock_dir" 2>/dev/null; then
+    if [ -f "$pid_file" ]; then
+      local owner_pid
+      owner_pid="$(cat "$pid_file" 2>/dev/null || true)"
+      if [ -n "$owner_pid" ] && kill -0 "$owner_pid" 2>/dev/null; then
+        die "profile busy ($profile); pid=$owner_pid lock=$lock_dir" 3
+      fi
+    fi
+    rm -rf "$lock_dir" 2>/dev/null || true
+    mkdir "$lock_dir" 2>/dev/null \
+      || die "profile busy ($profile); lock recovery failed for $lock_dir" 3
+  fi
+  echo "$$" > "$pid_file"
+  RUN_PROFILE_LOCK_DIR="$lock_dir"
+}
+
 ensure_container() {
   local p="$1" v running
   v="$VAR/$p"
@@ -111,6 +241,7 @@ ensure_container() {
   if [ "$(current)" = "$p" ] && [ "$running" = true ]; then
     verify_slot_mapping "$p"
     assert_profile_unowned "$p" "$CONT"
+    flock -u 8
     $ADB connect "$(serial $PORT)" >/dev/null 2>&1
     user_running && return 0
   fi
@@ -121,6 +252,7 @@ ensure_container() {
     || die "docker run failed" 3
   verify_slot_mapping "$p"
   assert_profile_unowned "$p" "$CONT"
+  flock -u 8
   $ADB disconnect "$(serial $PORT)" >/dev/null 2>&1 || true   # stale state (gotchas #5)
   wait_ready || die "boot timeout on variant $p (user never RUNNING — see docs/re-droid-gotchas.md #1)" 3
 }
@@ -150,21 +282,42 @@ case "$cmd" in
     user_running && echo "user: RUNNING" || echo "user: NOT RUNNING"
     ls -1t "$LOGS"/bing-*.log 2>/dev/null | head -5 ;;
   run)
-    action="${1:?full|search|rewards|read-to-earn|misc-cards|screenshot|daily}"; shift
-    prof=""; iters=6; dbg=""
+    action="${1:?full|search|rewards|read-to-earn|misc-cards|required-searches|screenshot|daily|points-snapshot}"; shift
+    prof=""; iters=6; dbg=""; cleanup_mode="$BING_POST_RUN_CLEANUP"
     while [ $# -gt 0 ]; do case "$1" in
       --profile) prof="$2"; shift 2;;
       --iters) iters="$2"; shift 2;;
+      --post-run-cleanup) cleanup_mode="$2"; shift 2;;
       --debug|--no-debug) dbg="$1"; shift;;
       *) die "unknown flag $1" 2;; esac; done
+    validate_post_run_cleanup_mode "$cleanup_mode"
     [ -n "$prof" ] || prof="$(current)"
     [ -n "$prof" ] || die "no active profile; pass --profile" 3
     LOCK=/tmp/bing-$PORT.lock; exec 9>"$LOCK"; flock 9
+    acquire_profile_lock "$prof"
+    trap run_exit_trap EXIT
+    trap 'run_signal_trap INT' INT
+    trap 'run_signal_trap TERM' TERM
     ensure_container "$prof"
+    verify_run_integrity "$prof" "$(serial $PORT)"
     ts="$(date +%Y%m%d-%H%M%S)"; log="$LOGS/bing-$prof-$action-$ts.log"
+    RUN_CLEANUP_PENDING=1
+    RUN_CLEANUP_RAN=0
+    RUN_EXIT_CODE=""
+    RUN_CLEANUP_MODE="$cleanup_mode"
+    RUN_CLEANUP_PROFILE="$prof"
+    RUN_CLEANUP_ACTION="$action"
+    RUN_CLEANUP_SERIAL="$(serial $PORT)"
     args=("$DRIVER" --serial "$(serial $PORT)" --profile "$prof" --only "$action")
-    [ "$action" = daily ] || args+=(--iters "$iters")  # daily: tiles cap stages
+    if [ "$action" = daily ]; then
+      [ -n "$BING_DAILY_TARGET" ] && args+=(--daily-target "$BING_DAILY_TARGET")
+    else
+      args+=(--iters "$iters")  # daily: tiles cap stages
+    fi
     "$PY" "${args[@]}" 2>&1 | tee "$log"; rc=${PIPESTATUS[0]}
+    RUN_EXIT_CODE="$rc"
+    post_run_cleanup "$cleanup_mode" "$prof" "$action" "$rc" "$(serial $PORT)"
+    RUN_CLEANUP_RAN=1
     echo "log=$log rc=$rc"; exit $rc ;;
   clear)
     prof=""
