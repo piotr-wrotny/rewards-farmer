@@ -92,7 +92,11 @@ def task_failure_report(exc: BaseException) -> tuple[str, str]:
 	if isinstance(exc, ElementNeverAppeared):
 		return "SKIP", unavailable
 
-	if isinstance(exc, (element_selectors.ElementNotReady, TimeoutException)):
+	element_not_ready = getattr(element_selectors, "ElementNotReady", None)
+	if element_not_ready is not None and isinstance(exc, element_not_ready):
+		return "FAIL", f"on the page but not ready in time ({type(exc).__name__})"
+
+	if isinstance(exc, TimeoutException):
 		return "FAIL", f"on the page but not ready in time ({type(exc).__name__})"
 
 	if isinstance(exc, NoSuchElementException):
