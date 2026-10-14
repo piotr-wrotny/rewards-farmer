@@ -307,7 +307,7 @@ class BingMobileFlow:
         return False
 
     def ensure_home(self):
-        for _ in range(4):
+        for _ in range(6):
             self.accept_permissions()
             self.dismiss_popups()
             if self.d(resourceId=SEARCH_BOX).exists and self.d(resourceId=PROFILE_BUTTON).exists \
