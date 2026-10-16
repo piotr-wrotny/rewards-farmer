@@ -23,15 +23,16 @@ Po stabilizacji 2026-10-14/15 harmonogram działa w trybie:
 - **Web rano:** pełny `run_daily.sh` dla wszystkich profili.
 - **Web wieczorem:** `run_task.sh bonus_points` (claim sweep) dla wszystkich profili.
 
-Backup crontaba po wdrożeniu stabilizacji: `~/crontab.backup-20261014-133251`.
+Backupi crontaba po wdrożeniu stabilizacji/rephase:
+`~/crontab.backup-20261014-133251`, `~/crontab.backup-rephase-20261016-102750`.
 
 ### Mobile daily (`bing.sh run daily`)
 
-`06:10 prod_1 + prod_2 · 08:00 d1 + d2 · 09:50 d3 + d4 · 11:40 d5 + d6 · 13:30 d7 + d8 · 15:20 d9 + d10 · 17:10 d11`
+`01:15 prod_1 + prod_2 · 03:05 d1 + d2 · 04:55 d3 + d4 · 06:45 d5 + d6 · 08:35 d7 + d8 · 10:25 d9 + d10 · 12:15 d11`
 
 ### Web morning (`run_daily.sh`)
 
-`06:30 default · 07:00 d1 · 07:30 prod_1 · 08:00 d2 · 08:30 d3 · 09:00 d4 · 09:30 d5 · 10:00 d6 · 10:30 d7 · 11:00 d8 · 11:30 d9 · 12:00 d10 · 12:30 d11`
+`01:45 default · 02:15 d1 · 02:45 prod_1 · 03:15 d2 · 03:45 d3 · 04:15 d4 · 04:45 d5 · 05:15 d6 · 05:45 d7 · 06:15 d8 · 06:45 d9 · 07:15 d10 · 07:45 d11`
 
 ### Web evening claim sweep (`run_task.sh bonus_points`)
 
