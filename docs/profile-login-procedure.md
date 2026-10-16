@@ -114,17 +114,16 @@ safety snapshot right after login.
 
 - `profiles/README.md`: one row per profile (account email, mobile snapshot, status).
 - Cron (install by editing `crontab -e` ON the server; back it up first):
-  - mobile: one line per profile on the even grid —
+  - mobile: one line per profile in the current 2-slot morning grid —
     `<M> <H> * * * ~/rewards-farmer-main/bing.sh run daily --profile <p> --no-debug >> ~/rewards-farmer-main/logs/cron.log 2>&1`.
-    Canonical grid + placement rule: `profiles/README.md` § Cron grid (13 profiles,
-    110-min step). The old `read-to-earn --iters 60` line shape is superseded by
+    Canonical grid + placement rule: `profiles/README.md` § Cron grid (source of
+    truth). The old `read-to-earn --iters 60` line shape is superseded by
     tile-driven `run daily`. flock `/tmp/bing-5555.lock` serialises overlaps.
   - web: `<M> <H> * * * ~/rewards-farmer-main/run_daily.sh <p> >> ~/rewards-farmer-main/logs/cron.log 2>&1`
     — NEVER overlapping another web run (the flow kills all image containers first).
-    Installed (2026-09-14): 01:30 `default` · 02:00 `domena1-prod` · 03:30 `prod_1`
-    (web = permanent layer, not fallback). Next named web profile continues the
-    ≥1 h-gap pattern (d2 → 04:30). A still-running earlier line gets killed by the
-    next one — keep ≥1 h clearance or accept the kill.
+    Current policy (2026-10 stabilization): morning `run_daily.sh` block + evening
+    `run_task.sh bonus_points` claim sweep for all web profiles; exact times in
+    `profiles/README.md` § Cron grid.
 - Back up crontab before touching it: `crontab -l > ~/crontab.backup-$(date +%Y%m%d)`.
 
 ## Exit codes / verification matrix

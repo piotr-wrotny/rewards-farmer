@@ -15,22 +15,30 @@ credentials) then `factory.ps1 save <name>`. New variant from snapshot:
 ssh piotr.wrotny@10.17.103.115 'p=<name>; docker run --rm -v /home/piotr.wrotny:/host busybox sh -c "mkdir -p /host/redroid-variants/$p && tar -C /host/redroid-variants/$p -xzf /host/profile-snapshots/$p.tar.gz" && cd ~/rewards-farmer-main && ./bing.sh use $p'
 ```
 
-## Cron grid (mobile + web, jedyna prawda dla harmonogramu — stan 2026-09-14)
+## Cron grid (mobile + web, jedyna prawda dla harmonogramu — stan 2026-10-16)
 
-13 profili signed-in, równy krok **110 min** od 01:10, backup starego crontabu:
-`/tmp/crontab.bak.20260914-110915`. Run `daily` 16–26 min → bufor ≥80 min; ostatni
-start 23:10, pauza nocna 120 min. **Web-linie (`run_daily.sh`) 13× — pełna siatka po
-fazie 3 (2026-09-14, backup `~/crontab.backup-20260914-204513`):** 01:30 `default` ·
-02:00 d1 · 03:30 prod_1 · 04:30 d2 · 05:30 d3 · 06:30 d4 · 07:30 d5 · 08:30 d6 ·
-09:30 d7 · 10:30 d8 · 11:30 d9 · 12:30 d10 · 13:30 d11 (odstęp 1 h, runy web
-15–24 min → worst-case margines ≥36 min; inny subsystem niż mobile, locka 5555 nie
-dzielą). Kolizje minute-level z mobile (np. web 08:30 d6 vs mobile 08:30 d3) to
-różne konta + różne podsystemy — akceptowane.
+Po stabilizacji 2026-10-14/15 harmonogram działa w trybie:
 
-`01:10 prod_1 · 03:00 prod_2 · 04:50 d1 · 06:40 d2 · 08:30 d3 · 10:20 d4 ·
-12:10 d5 · 14:00 d6 · 15:50 d7 · 17:40 d8 · 19:30 d9 · 21:20 d10 · 23:10 d11`
+- **Mobile:** 2 sloty (`redroid` + `redroid-b`), start od rana.
+- **Web rano:** pełny `run_daily.sh` dla wszystkich profili.
+- **Web wieczorem:** `run_task.sh bonus_points` (claim sweep) dla wszystkich profili.
 
-Wiersze poniżej oznaczają tylko STATUS provisioningu; sloty crouna czytaj z tej sekcji.
+Backup crontaba po wdrożeniu stabilizacji: `~/crontab.backup-20261014-133251`.
+
+### Mobile daily (`bing.sh run daily`)
+
+`06:10 prod_1 + prod_2 · 08:00 d1 + d2 · 09:50 d3 + d4 · 11:40 d5 + d6 · 13:30 d7 + d8 · 15:20 d9 + d10 · 17:10 d11`
+
+### Web morning (`run_daily.sh`)
+
+`06:30 default · 07:00 d1 · 07:30 prod_1 · 08:00 d2 · 08:30 d3 · 09:00 d4 · 09:30 d5 · 10:00 d6 · 10:30 d7 · 11:00 d8 · 11:30 d9 · 12:00 d10 · 12:30 d11`
+
+### Web evening claim sweep (`run_task.sh bonus_points`)
+
+`18:30 default · 18:50 d1 · 19:10 prod_1 · 19:30 d2 · 19:50 d3 · 20:10 d4 · 20:30 d5 · 20:50 d6 · 21:10 d7 · 21:30 d8 · 21:50 d9 · 22:10 d10 · 22:30 d11`
+
+Wiersze poniżej oznaczają głównie status provisioningu; historyczne adnotacje "cron ACTIVE"
+mogą opisywać starszą siatkę i nie są źródłem prawdy dla bieżących godzin.
 
 | name | kind | account | mobile snapshot | status |
 |------|------|---------|-----------------|--------|
