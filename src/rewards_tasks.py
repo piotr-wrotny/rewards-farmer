@@ -218,16 +218,29 @@ class RewardsTaskUtils:
 		# Re-read the panel per index: clicking an activity can re-render it and
 		# stale the captured references.
 		for index in range(len(daily_set_links)):
-			activities = self.elements.get_daily_set_elements()
+			clicked = False
+			last_stale = None
 
-			if index >= len(activities):
-				break
+			for _ in range(3):
+				try:
+					activities = self.elements.get_daily_set_elements()
+					if index >= len(activities):
+						break
 
-			description = self.elements.extract_card_descriptions(activities[index])
-			self.log_action("Daily set", description, "Rewards daily set activity")
-			self.move_to_and_click(activities[index])
-			time.sleep(random.uniform(2, 3))
-			self.driver.switch_to.window(self.driver.current_window_handle) # refocus on the main tab
+					card = activities[index]
+					description = self.elements.extract_card_descriptions(card)
+					self.log_action("Daily set", description, "Rewards daily set activity")
+					self.move_to_and_click(card)
+					time.sleep(random.uniform(2, 3))
+					self.driver.switch_to.window(self.driver.current_window_handle) # refocus on the main tab
+					clicked = True
+					break
+				except StaleElementReferenceException as exc:
+					last_stale = exc
+					time.sleep(random.uniform(0.6, 1.2))
+
+			if not clicked and last_stale is not None:
+				print(f"[WARNING] Daily set activity at index {index} kept going stale; skipping")
 
 		self.tab_utils.close_all_other_tabs()
 
