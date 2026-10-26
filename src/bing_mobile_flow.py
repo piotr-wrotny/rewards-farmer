@@ -138,6 +138,17 @@ def log(msg):
     print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)
 
 
+def env_float(name, default):
+    raw = os.getenv(name)
+    if raw is None:
+        return float(default)
+    try:
+        return float(raw)
+    except ValueError:
+        log(f"invalid {name}={raw!r}; using default {default}")
+        return float(default)
+
+
 def action(context, detail="", trigger="flow"):
     """Repo-wide action log convention (see AGENTS.md)."""
     log(f"[ACTION] {context} [{detail}] trigger={trigger}")
@@ -158,6 +169,19 @@ class BingMobileFlow:
         self.d.implicitly_wait(5)
         self.w = self.d.info["displayWidth"]
         self.h = self.d.info["displayHeight"]
+        # Production-tunable pacing (defaults trimmed for faster domain runs).
+        self.search_box_settle_s = env_float("BING_SEARCH_BOX_SETTLE_S", 1.2)
+        self.search_type_settle_s = env_float("BING_SEARCH_TYPE_SETTLE_S", 1.0)
+        self.search_serp_settle_s = env_float("BING_SEARCH_SERP_SETTLE_S", 3.5)
+        self.search_serp_dwell_min_s = env_float("BING_SEARCH_SERP_DWELL_MIN_S", 3.0)
+        self.search_serp_dwell_max_s = env_float("BING_SEARCH_SERP_DWELL_MAX_S", 4.0)
+        self.search_back_settle_s = env_float("BING_SEARCH_BACK_SETTLE_S", 2.0)
+        self.article_open_min_s = env_float("BING_ARTICLE_OPEN_MIN_S", 3.0)
+        self.article_open_max_s = env_float("BING_ARTICLE_OPEN_MAX_S", 4.5)
+        self.article_read_min_s = env_float("BING_ARTICLE_READ_MIN_S", 3.0)
+        self.article_read_max_s = env_float("BING_ARTICLE_READ_MAX_S", 6.0)
+        self.article_back_min_s = env_float("BING_ARTICLE_BACK_MIN_S", 2.0)
+        self.article_back_max_s = env_float("BING_ARTICLE_BACK_MAX_S", 3.0)
 
     # ------------------------------------------------------------- evidence
     def focus(self):
@@ -370,7 +394,7 @@ class BingMobileFlow:
 
     def required_searches(self, count=30):
         """count searches: unique sample of the phrase pool; after each query —
-        random scroll on the SERP + 5-6 s wait (web flow parity, AGENTS.md).
+        random scroll on the SERP + short dwell.
         Per-iteration ensure_home(): after back from the SERP the app can rest
         on AIToolsSuggestActivity / MSN feed (tunnel pilot 2026-09-09) and the
         home search box is not addressable there."""
@@ -382,21 +406,22 @@ class BingMobileFlow:
                     log(f"[{i}/{len(queries)}] home unreachable — aborting batch")
                     break
                 self.tap(SEARCH_BOX, f"search-box-{i}")
-                time.sleep(2)
+                time.sleep(self.search_box_settle_s)
                 self.type_text(q)
-                time.sleep(1.5)
+                time.sleep(self.search_type_settle_s)
                 self.press("enter", f"submit-search-{i}")
                 opened = self.wait_activity(ACT_BROWSER, 15)
                 if opened:
-                    time.sleep(5)
-                    # human-ish scroll: 1-3 random swipes down, then 5-6 s
+                    time.sleep(self.search_serp_settle_s)
+                    # human-ish scroll: 1-3 random swipes down, then dwell
                     for _ in range(random.randint(1, 3)):
                         self.swipe(0.5, 0.7, 0.5,
                                    0.7 - random.uniform(0.08, 0.2), "search-scroll")
                         time.sleep(random.uniform(0.8, 1.5))
-                    time.sleep(random.uniform(5, 6))
+                    time.sleep(random.uniform(self.search_serp_dwell_min_s,
+                                              self.search_serp_dwell_max_s))
                     self.press("back", f"leave-results-{i}")
-                    time.sleep(3)
+                    time.sleep(self.search_back_settle_s)
                     ok += 1
                     log(f"[{i}/{len(queries)}] {q!r} serp=True")
                 else:
@@ -561,11 +586,11 @@ class BingMobileFlow:
             seen.add(title)
             self.tap((cx, cy), "article-card")
             self.shot(f"article-opened-{done + 1}")
-            time.sleep(random.uniform(5, 7))
-            self.read_article(random.uniform(5, 10))
+            time.sleep(random.uniform(self.article_open_min_s, self.article_open_max_s))
+            self.read_article(random.uniform(self.article_read_min_s, self.article_read_max_s))
             self.shot(f"article-read-{done + 1}")
             self.press("back", "leave-article")
-            time.sleep(random.uniform(3, 4.5))
+            time.sleep(random.uniform(self.article_back_min_s, self.article_back_max_s))
             done += 1
             log(f"[{done}/{iterations}] read: {title[:60]}")
         return done
@@ -938,11 +963,11 @@ class BingMobileFlow:
                     title, cx, cy = random.choice(cands[:3])
                     seen.add(title)
                     self.tap((cx, cy), "article-card")
-                    time.sleep(random.uniform(5, 7))
+                    time.sleep(random.uniform(self.article_open_min_s, self.article_open_max_s))
                     self.shot(f"session{sessions}-article-{total + 1}")
-                    self.read_article(random.uniform(5, 10))
+                    self.read_article(random.uniform(self.article_read_min_s, self.article_read_max_s))
                     self.press("back", "leave-article")
-                    time.sleep(random.uniform(3, 4.5))
+                    time.sleep(random.uniform(self.article_back_min_s, self.article_back_max_s))
                     read_in_session += 1
                     total += 1
                     log(f"[{total}] session {sessions} ({read_in_session}/{max_per_session}): {title[:55]}")

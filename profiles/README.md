@@ -30,6 +30,20 @@ Backupi crontaba po wdrożeniu stabilizacji/rephase:
 
 `01:15 prod_1 + prod_2 · 03:05 d1 + d2 · 04:55 d3 + d4 · 06:45 d5 + d6 · 08:35 d7 + d8 · 10:25 d9 + d10 · 12:15 d11`
 
+### Mobile retry dispatcher (domena profiles, optional hardening)
+
+For unstable days, keep the primary mobile grid above and add a lightweight
+retry pass for `domena1-prod..domena11-prod`:
+
+- every 10–15 min: `scripts/mobile_daily_dispatcher.sh dispatch`
+- one profile per invocation (global lock + existing `bing.sh` lock)
+- retries only when today's latest run is not `DONE state=daily_done`
+- per-profile cooldown + max retries/day + `BING_DAILY_TARGET` gate
+
+Recommended cron line:
+
+`*/15 * * * * cd ~/rewards-farmer-main && BING_DISPATCHER_DAILY_TARGET=120 scripts/mobile_daily_dispatcher.sh dispatch >> ~/rewards-farmer-main/logs/cron.log 2>&1`
+
 ### Web morning (`run_daily.sh`)
 
 `01:45 default · 02:15 d1 · 02:45 prod_1 · 03:15 d2 · 03:45 d3 · 04:15 d4 · 04:45 d5 · 05:15 d6 · 05:45 d7 · 06:15 d8 · 06:45 d9 · 07:15 d10 · 07:45 d11`
