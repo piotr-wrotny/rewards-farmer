@@ -23,6 +23,7 @@ PROFILES = (
     "domena9-prod",
     "domena10-prod",
     "domena11-prod",
+    "r_domena_01",
 )
 
 

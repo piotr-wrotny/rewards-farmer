@@ -3,10 +3,12 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-LOG_DIR="$ROOT/logs"
+LOG_DIR="${POINTS_LOG_DIR:-$ROOT/logs}"
+BING_SH="${BING_SH:-$ROOT/bing.sh}"
+RUN_TASK_SH="${RUN_TASK_SH:-$ROOT/run_task.sh}"
 mkdir -p "$LOG_DIR"
 
-PROFILES=(
+DEFAULT_PROFILES=(
   "prod_1"
   "domena1-prod"
   "domena2-prod"
@@ -19,7 +21,13 @@ PROFILES=(
   "domena9-prod"
   "domena10-prod"
   "domena11-prod"
+  "r_domena_01"
 )
+if [ -n "${POINTS_PROFILES:-}" ]; then
+  read -r -a PROFILES <<< "$POINTS_PROFILES"
+else
+  PROFILES=("${DEFAULT_PROFILES[@]}")
+fi
 
 usage() {
   cat >&2 <<EOF
@@ -33,11 +41,19 @@ EOF
 }
 
 extract_json_line() {
-  python3 -c "import sys
-for line in reversed(sys.stdin.read().splitlines()):
-    line=line.strip()
-    if line.startswith('{') and line.endswith('}'):
-        print(line); break"
+  python3 -c "import json, re, sys
+ansi = re.compile(r'\x1b\[[0-9;]*[A-Za-z]')
+for raw in reversed(sys.stdin.read().splitlines()):
+    line = ansi.sub('', raw).strip()
+    if '{' not in line or '}' not in line:
+        continue
+    candidate = line[line.find('{'):line.rfind('}') + 1]
+    try:
+        json.loads(candidate)
+    except Exception:
+        continue
+    print(candidate)
+    break"
 }
 
 snapshot() {
@@ -50,7 +66,7 @@ snapshot() {
   for profile in "${PROFILES[@]}"; do
     now="$(date --iso-8601=seconds)"
     set +e
-    out="$("$ROOT/bing.sh" run points-snapshot --profile "$profile" --post-run-cleanup stop-container 2>&1)"
+    out="$("$BING_SH" run points-snapshot --profile "$profile" --post-run-cleanup stop-container 2>&1)"
     rc=$?
     set -e
     json="$(printf '%s\n' "$out" | extract_json_line)"
@@ -74,7 +90,7 @@ print(f'{state}\\t{total}\\t{daily}')" "$json")"
 
 claim_bonus_for_all() {
   for profile in "${PROFILES[@]}"; do
-    "$ROOT/run_task.sh" bonus_points "$profile" >/dev/null 2>&1 || true
+    "$RUN_TASK_SH" bonus_points "$profile" >/dev/null 2>&1 || true
   done
 }
 

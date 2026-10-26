@@ -33,11 +33,19 @@ ok() {
 }
 
 extract_json_line() {
-  python3 -c "import sys
-for line in reversed(sys.stdin.read().splitlines()):
-    line=line.strip()
-    if line.startswith('{') and line.endswith('}'):
-        print(line); break"
+  python3 -c "import json, re, sys
+ansi = re.compile(r'\x1b\[[0-9;]*[A-Za-z]')
+for raw in reversed(sys.stdin.read().splitlines()):
+    line = ansi.sub('', raw).strip()
+    if '{' not in line or '}' not in line:
+        continue
+    candidate = line[line.find('{'):line.rfind('}') + 1]
+    try:
+        json.loads(candidate)
+    except Exception:
+        continue
+    print(candidate)
+    break"
 }
 
 json_get() {
@@ -60,12 +68,12 @@ PY
 run_capture() {
   local __outvar="$1"
   shift
-  local out rc
+  local captured rc
   set +e
-  out="$("$@" 2>&1)"
+  captured="$("$@" 2>&1)"
   rc=$?
   set -e
-  printf -v "$__outvar" "%s" "$out"
+  printf -v "$__outvar" "%s" "$captured"
   return "$rc"
 }
 
@@ -101,7 +109,7 @@ check_slot_lock() {
 }
 
 switch_profile() {
-  local profile="$1" out
+  local profile="$1" out=""
   if ! run_capture out "$BING_SH" use "$profile"; then
     die "bing.sh use $profile failed:
 $out" 3
@@ -119,7 +127,7 @@ check_running_user() {
 }
 
 run_points_snapshot() {
-  local profile="$1" out json state total daily
+  local profile="$1" out="" json state total daily
   if ! run_capture out "$BING_SH" run points-snapshot --profile "$profile" --post-run-cleanup keep-running; then
     die "points-snapshot failed:
 $out" 3
@@ -134,7 +142,7 @@ $out" 3
 }
 
 probe_rewards_state() {
-  local profile="$1" out json state
+  local profile="$1" out="" json state
   if ! run_capture out "$BING_SH" run rewards --profile "$profile" --iters 0 --no-debug --post-run-cleanup keep-running; then
     die "rewards probe failed:
 $out" 3
