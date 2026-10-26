@@ -9,6 +9,19 @@ Zakres:
 - tworzenie **web profili** (`~/rewards-farmer-main/edge-profiles/<profil>`)
 - minimalna weryfikacja, że profil jest gotowy do późniejszego spięcia w cron
 
+Jeżeli wolisz narzędzie interaktywne po stronie lokalnej operatora:
+
+```bash
+py -3 tools\profile_tui.py
+```
+
+TUI zawiera opcje: dodanie profilu web+mobile po nazwie, uruchamianie widoku
+web/mobile (także równolegle), status zajętości serwera, kill switch
+(maintenance ON + safe stop), oraz resume niedokończonych sesji mobile.
+Pełna mapa klawiszy i scenariuszy: `docs/operator-tui.md`.
+Menu akcji otwiera się centralnie skrótem `x`.
+Smoke test UI po zmianach: `py -3 -m pytest tests\test_profile_tui.py -q`.
+
 > Uwaga: profile zawierają dane kont. Nie kopiuj ich do repo i nie wrzucaj do git.
 
 ---
@@ -39,11 +52,27 @@ Potem dla KAŻDEGO profilu osobno:
 
 ```bash
 cd ~/rewards-farmer-main
-./bing.sh use <profil>
-./bing.sh status
+scripts/mobile_profile_preflight.sh pre-login <profil>
 ```
 
-Status musi pokazać działający kontener i użytkownika Android `RUNNING`.
+To robi pełny preflight slotu (`bing.sh use`, ADB `RUNNING`, snapshot punktów) i
+**wymaga** stanu `wall` przed logowaniem (czysty, niezalogowany seed).
+
+### Szybsza ścieżka dla nowych `r_domena_*`
+
+Zamiast ręcznego seeda można użyć jednego skryptu:
+
+```bash
+cd ~/rewards-farmer-main
+scripts/mobile_prepare_new_profile.sh r_domena_01
+```
+
+Skrypt:
+- backupuje stary wolumen profilu (jeśli istnieje),
+- tworzy świeży pusty wolumen `/data`,
+- uruchamia profil na slocie 5555 (`bing.sh use`),
+- instaluje Bing APK z wolumenu `test`,
+- uruchamia gate pre-login (`rewards`) z oczekiwanym `state=wall`.
 
 ---
 
@@ -65,10 +94,10 @@ Weryfikacja po loginie:
 
 ```bash
 cd ~/rewards-farmer-main
-./bing.sh run rewards --profile <profil> --iters 0 --no-debug
+scripts/mobile_profile_preflight.sh post-login <profil>
 ```
 
-Oczekiwane: `rc=0`, bez `state=wall`.
+To wymaga stanu `!= wall` i ponownie sprawdza gotowość slotu.
 
 ---
 

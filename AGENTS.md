@@ -5,6 +5,7 @@ Quick navigation for fresh sessions:
 1. `docs/START-HERE.md` — short operational handoff
 2. `profiles/README.md` — cron grid + profile registry (source of truth)
 3. this file (`AGENTS.md`) — full system detail and incident history
+4. `docs/operator-tui.md` — local Textual operator console (onboarding + maintenance)
 
 **Status: DELIVERED (2026-09-14). Maintenance only.** The farm runs 13 signed-in
 Microsoft Rewards profiles unattended on the server. No new features are planned;
@@ -87,15 +88,24 @@ registry is the single source of truth).
     (`docs/profile-provisioning-mobile.md`).
   - Env overrides: `BING_PY`, `BING_VAR`, `BING_CONT`, `BING_PORT`,
     `BING_INNER_PORT` (container adbd port, default 5555),
-    `BING_POST_RUN_CLEANUP`, `BING_DAILY_TARGET` (optional gate), `ADB`.
+    `BING_POST_RUN_CLEANUP`, `BING_DAILY_TARGET` (optional gate),
+    `BING_MAINTENANCE_FILE`, `BING_IGNORE_MAINTENANCE`, `ADB`.
 - `src/bing_mobile_flow.py` — the driver (imports stdlib + uiautomator2 only).
 - `nouns.txt` — phrase-pool seed (mobile + web both read it).
 - `scripts/points_monitor.sh` — snapshot/diff monitor for per-profile
   `total_points` and optional end-of-day web bonus-claim sweep before final
   snapshot (`claim-and-snapshot`), plus `check-full` for final `daily_points`
   target validation.
+- `scripts/server_maintenance.sh` — maintenance gate + safe stop helpers:
+  `status|enable|disable|kill-switch [--hard]`. Gate file:
+  `~/rewards-farmer-main/.maintenance-mode`.
+- `scripts/resume_incomplete_mobile.sh` — resumes unfinished daily mobile runs
+  from logs; use `--dry-run` to preview queue; skips `state=wall` profiles.
 - `tools/web_runtime_stats.py` — compute average/median/max runtime for daily web
   runs from `logs/web-run*.log` filenames + mtime.
+- `tools/profile_tui.py` — local Textual operator console for onboarding and
+  operations (views, verification, maintenance, resume). Keymap and usage:
+  `docs/operator-tui.md`.
 - `profiles/README.md` — registry: profile ↔ volume ↔ status ↔ cron grid.
   `docs/profile-accounts.md` — identities. Provisioning (current era, variant-direct
   seeding + user login via scrcpy): `docs/profile-provisioning-mobile.md`.
@@ -107,6 +117,7 @@ registry is the single source of truth).
 - Tests: `tests/test_bing.sh` covers core guards; `tests/test_bing_multi_instance.sh`
   covers mount/slot ownership checks; `tests/test_bing_post_run_cleanup.sh` covers
   cleanup modes and exit-code preservation (all with fake adb/python/container shims).
+  `tests/test_profile_tui.py` covers TUI keybinding flow + modal input interaction.
 
 ## LIVE — web layer (required for full coverage, rolling out to all prods)
 Two stacks share one server. Owner decision 2026-09-14: **every prod account must
@@ -211,6 +222,9 @@ dependency/docs cleanup):
   (rc 3). Expect queued manual runs to start after a cron line finishes — kill
   them if stale (`ps -eo pid,ppid,lstart,cmd | grep bing.sh`, kill the flock
   holder's whole process group).
+- During onboarding windows use maintenance gate first:
+  `scripts/server_maintenance.sh kill-switch` (soft) and only then
+  `scripts/server_maintenance.sh disable` + `scripts/resume_incomplete_mobile.sh`.
 - Launching a detached manual run over ssh: bare `&` silently dies AND
   double-queues duplicates. Use
   `setsid nohup ./bing.sh run daily --profile P --no-debug >/tmp/x.out 2>&1 </dev/null &`

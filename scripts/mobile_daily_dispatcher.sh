@@ -6,6 +6,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 LOG_DIR="$ROOT/logs"
+MAINTENANCE_FILE="${REWARDS_MAINTENANCE_FILE:-$ROOT/.maintenance-mode}"
+REWARDS_IGNORE_MAINTENANCE="${REWARDS_IGNORE_MAINTENANCE:-0}"
 mkdir -p "$LOG_DIR"
 
 LOCK_DIR="/tmp/bing-mobile-dispatcher.lockdir"
@@ -28,6 +30,7 @@ DEFAULT_PROFILES=(
   "domena9-prod"
   "domena10-prod"
   "domena11-prod"
+  "r_domena_01"
 )
 
 usage() {
@@ -125,6 +128,10 @@ pick_candidate() {
 }
 
 dispatch_once() {
+  if [ "$REWARDS_IGNORE_MAINTENANCE" != 1 ] && [ -f "$MAINTENANCE_FILE" ]; then
+    echo "[DISPATCH] maintenance mode enabled ($MAINTENANCE_FILE); skipping dispatch"
+    return 0
+  fi
   local picked profile reason retries ts log_file run_rc run_log
   picked="$(pick_candidate || true)"
   if [ -z "$picked" ]; then

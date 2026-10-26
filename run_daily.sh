@@ -6,7 +6,14 @@ set -euo pipefail
 PROFILE="${1:-default}"
 ROOT="$HOME/rewards-farmer-main"
 LOG_DIR="$ROOT/logs"
+MAINTENANCE_FILE="${REWARDS_MAINTENANCE_FILE:-$ROOT/.maintenance-mode}"
+REWARDS_IGNORE_MAINTENANCE="${REWARDS_IGNORE_MAINTENANCE:-0}"
 mkdir -p "$LOG_DIR"
+
+if [ "$REWARDS_IGNORE_MAINTENANCE" != 1 ] && [ -f "$MAINTENANCE_FILE" ]; then
+  echo "maintenance mode enabled ($MAINTENANCE_FILE); refusing run_daily.sh" >&2
+  exit 3
+fi
 
 case "$PROFILE" in
   default) PROFILE_DIR="$ROOT/edge-profile"; SUFFIX="" ;;

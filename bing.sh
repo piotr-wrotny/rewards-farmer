@@ -18,6 +18,9 @@ CONT="${BING_CONT:-redroid}"; PORT="${BING_PORT:-5555}"
 INNER_PORT="${BING_INNER_PORT:-5555}"
 BING_POST_RUN_CLEANUP="${BING_POST_RUN_CLEANUP:-keep-running}"
 BING_DAILY_TARGET="${BING_DAILY_TARGET:-}"
+BING_ADB_TIMEOUT_SECONDS="${BING_ADB_TIMEOUT_SECONDS:-20}"
+BING_MAINTENANCE_FILE="${BING_MAINTENANCE_FILE:-$ROOT/.maintenance-mode}"
+BING_IGNORE_MAINTENANCE="${BING_IGNORE_MAINTENANCE:-0}"
 OWNERSHIP_LOCK=/tmp/bing-profile-ownership.lock
 RUN_CLEANUP_PENDING=0
 RUN_CLEANUP_RAN=0
@@ -30,13 +33,34 @@ RUN_PROFILE_LOCK_DIR=""
 
 serial() { echo "127.0.0.1:$1"; }
 die() { echo "$*" >&2; exit "${2:-2}"; }
+require_not_maintenance() {
+  local context="$1"
+  if [ "$BING_IGNORE_MAINTENANCE" = 1 ]; then
+    return 0
+  fi
+  if [ -f "$BING_MAINTENANCE_FILE" ]; then
+    die "maintenance mode enabled ($BING_MAINTENANCE_FILE); refusing $context. Set BING_IGNORE_MAINTENANCE=1 to override." 3
+  fi
+}
+adb_cmd() {
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "$BING_ADB_TIMEOUT_SECONDS" "$@"
+  else
+    "$@"
+  fi
+}
+adb_connect() { adb_cmd "$ADB" connect "$1" >/dev/null 2>&1; }
+adb_disconnect() { adb_cmd "$ADB" disconnect "$1" >/dev/null 2>&1 || true; }
 current() {
   local mount
   mount="$(container_data_mount "$CONT")"
   [ -n "$mount" ] || return 1
   basename "$mount"
 }
-user_running() { $ADB -s "$(serial $PORT)" shell "dumpsys activity users 2>/dev/null | grep -m1 'User #0'" 2>/dev/null | grep -q RUNNING; }
+user_running() {
+  adb_cmd "$ADB" -s "$(serial $PORT)" shell "dumpsys activity users 2>/dev/null | grep -m1 'User #0'" 2>/dev/null \
+    | grep -q RUNNING
+}
 
 canon_path() {
   local p="$1"
@@ -99,7 +123,7 @@ verify_slot_mapping() {
 # Boot-ready means user RUNNING (sys.boot_completed lies; gotchas #6).
 wait_ready() {
   for _ in $(seq 1 40); do sleep 3
-    $ADB connect "$(serial $PORT)" >/dev/null 2>&1
+    adb_connect "$(serial $PORT)"
     user_running && return 0
   done; return 1
 }
@@ -115,7 +139,7 @@ verify_run_integrity() {
   local profile="$1" slot_serial="$2"
   verify_slot_mapping "$profile"
   assert_profile_unowned "$profile" "$CONT"
-  $ADB connect "$slot_serial" >/dev/null 2>&1 \
+  adb_connect "$slot_serial" \
     || die "integrity check failed: adb connect $slot_serial" 3
 }
 
@@ -145,7 +169,7 @@ post_run_cleanup() {
     "")
       ;;
     home)
-      if out="$($ADB -s "$slot_serial" shell input keyevent KEYCODE_HOME 2>&1)"; then
+      if out="$(adb_cmd "$ADB" -s "$slot_serial" shell input keyevent KEYCODE_HOME 2>&1)"; then
         outcome=ok
       else
         cleanup_rc=$?
@@ -153,7 +177,7 @@ post_run_cleanup() {
       fi
       ;;
     force-stop)
-      if out="$($ADB -s "$slot_serial" shell am force-stop com.microsoft.bing 2>&1)"; then
+      if out="$(adb_cmd "$ADB" -s "$slot_serial" shell am force-stop com.microsoft.bing 2>&1)"; then
         outcome=ok
       else
         cleanup_rc=$?
@@ -230,7 +254,7 @@ ensure_container() {
   if [ "$(current)" = "$p" ] && [ "$running" = true ]; then
     verify_slot_mapping "$p"
     assert_profile_unowned "$p" "$CONT"
-    $ADB connect "$(serial $PORT)" >/dev/null 2>&1
+    adb_connect "$(serial $PORT)"
     user_running && return 0
   fi
 
@@ -242,7 +266,7 @@ ensure_container() {
     verify_slot_mapping "$p"
     assert_profile_unowned "$p" "$CONT"
     flock -u 8
-    $ADB connect "$(serial $PORT)" >/dev/null 2>&1
+    adb_connect "$(serial $PORT)"
     user_running && return 0
   fi
   docker rm -f "$CONT" >/dev/null 2>&1 || true
@@ -253,7 +277,7 @@ ensure_container() {
   verify_slot_mapping "$p"
   assert_profile_unowned "$p" "$CONT"
   flock -u 8
-  $ADB disconnect "$(serial $PORT)" >/dev/null 2>&1 || true   # stale state (gotchas #5)
+  adb_disconnect "$(serial $PORT)"   # stale state (gotchas #5)
   wait_ready || die "boot timeout on variant $p (user never RUNNING — see docs/re-droid-gotchas.md #1)" 3
 }
 
@@ -283,6 +307,9 @@ case "$cmd" in
     ls -1t "$LOGS"/bing-*.log 2>/dev/null | head -5 ;;
   run)
     action="${1:?full|search|rewards|read-to-earn|misc-cards|required-searches|screenshot|daily|points-snapshot}"; shift
+    if [ "$action" = daily ]; then
+      require_not_maintenance "daily run"
+    fi
     prof=""; iters=6; dbg=""; cleanup_mode="$BING_POST_RUN_CLEANUP"
     while [ $# -gt 0 ]; do case "$1" in
       --profile) prof="$2"; shift 2;;
@@ -338,8 +365,8 @@ case "$cmd" in
     LOCK=/tmp/bing-5556.lock; exec 9>"$LOCK"; flock 9
     docker ps --format '{{.Names}}' | grep -qx redroid-factory || die "factory not running" 3
     # freeze order is sacred (AGENTS.md): force-stop -> sync -> stop -> tar -> start
-    $ADB -s 127.0.0.1:5556 shell am force-stop com.microsoft.bing
-    $ADB -s 127.0.0.1:5556 shell sync; sleep 3
+    adb_cmd "$ADB" -s 127.0.0.1:5556 shell am force-stop com.microsoft.bing
+    adb_cmd "$ADB" -s 127.0.0.1:5556 shell sync; sleep 3
     docker stop -t 30 redroid-factory >/dev/null
     docker run --rm -v "$HOME:/host" busybox sh -c \
       "tar -C /host/profile-factory-data -czf /host/profile-snapshots/$p.tar.gz ." || die "tar failed" 3

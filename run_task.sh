@@ -5,7 +5,7 @@ TASK="${1:-}"
 PROFILE="${2:-default}"
 if [ -z "$TASK" ]; then
   echo "Usage: ./run_task.sh <task> [profile]"
-  echo "Tasks: daily_set, explore_on_bing, visual_search, misc_cards, required_searches, bonus_points, all"
+  echo "Tasks: daily_set, explore_on_bing, visual_search, misc_cards, required_searches, bonus_points, all, login_check"
   echo "Profiles: default (= ~/rewards-farmer-main/edge-profile) or a name under edge-profiles/ (registry: profiles/README.md)"
   exit 1
 fi
@@ -13,7 +13,14 @@ fi
 ROOT="$HOME/rewards-farmer-main"
 LOG_DIR="$ROOT/logs"
 IMAGE="rewards-farmer-main-rewards-farmer:latest"
+MAINTENANCE_FILE="${REWARDS_MAINTENANCE_FILE:-$ROOT/.maintenance-mode}"
+REWARDS_IGNORE_MAINTENANCE="${REWARDS_IGNORE_MAINTENANCE:-0}"
 mkdir -p "$LOG_DIR"
+
+if [ "$REWARDS_IGNORE_MAINTENANCE" != 1 ] && [ "$TASK" != "login_check" ] && [ -f "$MAINTENANCE_FILE" ]; then
+  echo "maintenance mode enabled ($MAINTENANCE_FILE); refusing task '$TASK'" >&2
+  exit 3
+fi
 
 # Web credential profiles are separate user-data-dir volumes (one Microsoft account
 # each). 'default' is the historical edge-profile dir; named profiles live under

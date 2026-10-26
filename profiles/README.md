@@ -4,6 +4,12 @@ Named credential variants for BOTH flows. One profile name = one Microsoft accou
 held in two independent stores: a mobile Android `/data` volume and a web Edge
 user-data-dir. Provision them separately (factory/noVNC), register them in one row.
 
+Operator console and safety controls:
+
+- local Textual TUI: `py -3 tools\profile_tui.py` (`docs/operator-tui.md`)
+- maintenance gate / kill-switch: `scripts/server_maintenance.sh`
+- resume incomplete mobile sessions: `scripts/resume_incomplete_mobile.sh`
+
 **Mobile** (`com.microsoft.bing`): unpacked Android `/data` volume at
 `~/redroid-variants/<name>` on the server + a snapshot
 `~/profile-snapshots/<name>.tar.gz` (whole volume; uid-perfect; **server-only — never
@@ -59,6 +65,7 @@ mogą opisywać starszą siatkę i nie są źródłem prawdy dla bieżących god
 |------|------|---------|-----------------|--------|
 | test | anonymous | — | `test.tar.gz` | rebuilt 2026-09-01 from factory baseline (`pm clear` + `cp -a`); `bing.sh clear` allowed |
 | prod_2 | signed-in | 616piotrek@gmail.com | `prod_2.tar.gz` | READ-TO-EARN e2e VERIFIED 2026-09-01: 30/30 daily pts, 2 sessions (`docs/bing-mobile-flow.md` § Read-to-earn e2e) |
+| r_domena_01 | new | pending provisioning | — | nowy profil rejestracyjny; dołączyć do mobile/web po potwierdzeniu konta i wygenerowaniu snapshotów; nie ma jeszcze przydzielonego slotu cron ani weryfikacji loginu |
 | prod_1 | signed-in | piotrwro01@gmail.com | `prod_1.tar.gz` | VERIFIED signed-in 2026-09-01 (factory login → snapshot → variant); RTE `30 points earned`. **WEB PROVISIONED 2026-09-14** (owner directive: every prod = full coverage; visual search + bonus exist only in web): `edge-profiles/prod_1`, noVNC login, `login_check` rc 0 `state=signed_in`, cron `30 3 * * * run_daily.sh prod_1` (backup `/tmp/crontab.bak.20260914-134100`) |
 | domena1-prod | signed-in | domena-1@agregat-streszczen.pl | `domena1-prod.tar.gz` | PROVISIONED 2026-09-09 (`docs/profile-login-procedure.md`): mobile VERIFIED on variant (`rewards` probe → `state=rte` rc 0); MISC-CARDS e2e VERIFIED 2026-09-09 (5 cards +25 pts, `bing-domena1-prod-misc-cards-20260909-141327.log`); web VERIFIED `login_check` → `state=signed_in`; cron: web + mobile both 02:00; TILE-DRIVEN DAILY VERIFIED 2026-09-09 evening (`bing.sh run daily`, rc 0, 75/75 all-terminal, check-in `ok`) |
 | domena2-prod | signed-in | domena-2@agregat-streszczen.pl | `domena2-prod.tar.gz` | PROVISIONED + MISC-CARDS e2e VERIFIED 2026-09-09 clean-account (9 cards +39 pts, `Daily points 0/75→15/75`, rc 0; `docs/bing-mobile-flow.md` § Misc cards e2e); TILE-DRIVEN DAILY VERIFIED 2026-09-09 evening: 65/75→75/75 (pool card +10), check-in inert on fresh account (UNCONFIRMED best-effort); **WEB PROVISIONED 2026-09-14** (fresh volume after the D1-contamination incident — old dir kept as `domena2-prod.D1-CONTAMINATED-20260914`, delete at owner discretion): identity PROVEN by `Web Data` grep (`domena-2@agregat-streszczen.pl`) + `login_check` rc 0 `state=signed_in`; **cron ACTIVE (04:30)** ; PHASE-2 VERIFIED PASS (4 OK / 2 SKIP / 0 ERROR/FAIL, logs/web-run-domena2-prod-20260914-155346.log) |

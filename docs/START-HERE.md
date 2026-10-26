@@ -65,6 +65,41 @@ For server-local ADB readiness:
 adb -s 127.0.0.1:5555 shell 'echo ok-from-server'
 ```
 
+For new mobile-profile onboarding preflight:
+
+```bash
+scripts/mobile_profile_preflight.sh pre-login <profile>
+```
+
+For fresh `r_domena_*` mobile setup (reseed + Bing install + wall gate):
+
+```bash
+scripts/mobile_prepare_new_profile.sh r_domena_01
+```
+
+For local operator TUI (web+mobile onboarding and live views):
+
+```bash
+py -3 tools\profile_tui.py
+# if terminal prints garbage on mouse move:
+py -3 tools\profile_tui.py --no-mouse
+```
+
+Open central action menu: `x` (minimal footer, no horizontal key-scroll).
+Keymap and workflow details: `docs/operator-tui.md`.
+Deployment test command: `py -3 -m pytest tests\test_profile_tui.py -q`.
+
+For safe server pause/resume around onboarding windows:
+
+```bash
+scripts/server_maintenance.sh status
+scripts/server_maintenance.sh kill-switch          # soft/graceful
+scripts/server_maintenance.sh kill-switch --hard   # escalation
+scripts/server_maintenance.sh disable
+scripts/resume_incomplete_mobile.sh --dry-run
+scripts/resume_incomplete_mobile.sh --max 6
+```
+
 ## 6) If local scrcpy says `offline`
 
 On server first, ensure slot is healthy:
@@ -92,4 +127,3 @@ bin\scrcpy\scrcpy.exe -s 127.0.0.1:15555
 - local checkout is source of truth
 - server has no git; deploy changed files by `scp/rsync`
 - **never push to `origin`**; push to `fork` only
-
