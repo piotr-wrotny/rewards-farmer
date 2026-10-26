@@ -1487,10 +1487,10 @@ class RewardsOperatorTUI(App[None]):
         return profile or None
 
     def _set_status(self, text: str) -> None:
-        safe = rich_escape(_sanitize_terminal_text(text))
-        self.query_one("#status", Static).update(safe)
-        proc_safe = rich_escape(_sanitize_terminal_text(self.ops.proc.summary()))
-        self.query_one("#processes", Static).update(f"Local processes: {proc_safe}")
+        safe = _sanitize_terminal_text(text)
+        self.query_one("#status", Static).update(Text(safe))
+        proc_safe = _sanitize_terminal_text(self.ops.proc.summary())
+        self.query_one("#processes", Static).update(Text(f"Local processes: {proc_safe}"))
 
     def _log_result(self, title: str, result: OperationResult) -> None:
         log = self.query_one("#log", RichLog)
