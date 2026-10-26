@@ -9,11 +9,13 @@ Run locally (Windows):
 py -3 tools\profile_tui.py
 ```
 
+Default mode has mouse disabled (safe baseline for terminals that print escape garbage on mouse move).
+
 Optional:
 
 ```bash
 py -3 tools\profile_tui.py --no-browser
-py -3 tools\profile_tui.py --no-mouse
+py -3 tools\profile_tui.py --mouse
 ```
 
 ## Core behavior
@@ -76,8 +78,8 @@ In popup menu, highlighted action now shows:
   - latest `logs/points-snapshot-*.tsv` (if available),
   - latest `logs/bing-<profile>-daily-*.log` for done-today and gain.
 
-If moving mouse prints escape-like garbage in your terminal, run with
-`--no-mouse` (terminal mouse reporting disabled).
+Mouse is disabled by default. Use `--mouse` only when your terminal handles
+mouse reporting correctly.
 
 ## Maintenance and resume integration
 

@@ -1478,7 +1478,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--local-mobile-port", type=int, default=cfg.local_mobile_port)
     parser.add_argument("--remote-mobile-port", type=int, default=cfg.remote_mobile_port)
     parser.add_argument("--no-browser", action="store_true", help="Do not auto-open browser when starting web tunnel")
-    parser.add_argument("--no-mouse", action="store_true", help="Disable mouse support in terminal UI")
+    parser.add_argument("--mouse", action="store_true", help="Enable mouse support in terminal UI")
+    parser.add_argument("--no-mouse", action="store_true", help="Deprecated alias (mouse is disabled by default)")
     return parser.parse_args()
 
 
@@ -1497,7 +1498,7 @@ def main() -> int:
     )
     ops = ProfileOps(cfg=cfg, open_browser=not args.no_browser)
     app = RewardsOperatorTUI(ops=ops)
-    app.run(mouse=not args.no_mouse)
+    app.run(mouse=args.mouse and not args.no_mouse)
     return 0
 
 
