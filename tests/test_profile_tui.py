@@ -3,6 +3,8 @@ import os
 import sys
 import unittest
 
+from textual.widgets import DataTable
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from tools.profile_tui import OperationResult, RewardsOperatorTUI
@@ -25,7 +27,17 @@ class FakeOps:
 
     def server_busy_check(self) -> OperationResult:
         self.calls.append(("server_busy_check",))
-        return OperationResult("server_busy_check", 0, "MOBILE=FREE")
+        return OperationResult(
+            "server_busy_check",
+            0,
+            "MOBILE=BUSY",
+            data={
+                "RUNNING_PROFILE": "r_domena_01",
+                "DONE_TODAY": "r_domena_01",
+                "MOBILE_RUNNING": "1",
+                "ACTIVE_PROFILE": "active=r_domena_01",
+            },
+        )
 
     def start_web_login(self, profile: str) -> OperationResult:
         self.calls.append(("start_web_login", profile))
@@ -55,6 +67,11 @@ class FakeOps:
     def run_single_daily(self, profile: str) -> OperationResult:
         self.calls.append(("run_single_daily", profile))
         return OperationResult("run_single_daily", 0, "ok")
+
+    def run_single_daily_stream(self, profile: str, emit) -> OperationResult:  # noqa: ANN001
+        self.calls.append(("run_single_daily_stream", profile))
+        emit("line")
+        return OperationResult("run_single_daily_stream", 0, "line")
 
     def add_profile_web_and_mobile(self, profile: str) -> OperationResult:
         self.calls.append(("add_profile_web_and_mobile", profile))
@@ -97,6 +114,15 @@ class ProfileTUITests(unittest.TestCase):
                 await pilot.press("t")
                 await pilot.pause(0.2)
                 self.assertIn(("maintenance_status",), ops.calls)
+
+                await pilot.press("b")
+                await pilot.pause(0.2)
+                table = app.query_one("#profiles", DataTable)
+                row = table.get_row_at(0)
+                state = row[3].plain if hasattr(row[3], "plain") else str(row[3])
+                today = row[4].plain if hasattr(row[4], "plain") else str(row[4])
+                self.assertEqual(state, "RUN")
+                self.assertEqual(today, "DONE")
 
                 await pilot.press("w")
                 await pilot.pause(0.2)

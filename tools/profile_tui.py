@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
+from rich.text import Text
 from textual import on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -45,6 +46,7 @@ class OperationResult:
 
 @dataclass(frozen=True)
 class MenuEntry:
+    group: str
     action: str
     label: str
     shortcut: str
@@ -198,17 +200,24 @@ ls -1 {self.remote_repo_expr()}/edge-profiles 2>/dev/null | sort || true
         remote = f"""
 cd {self.remote_repo_expr()}
 MAINTENANCE_FILE="${{REWARDS_MAINTENANCE_FILE:-$PWD/.maintenance-mode}}"
+TODAY="$(date +%Y%m%d)"
 if [ -f "$MAINTENANCE_FILE" ]; then MAINTENANCE_STATE=ON; else MAINTENANCE_STATE=OFF; fi
 LOCK_HOLDERS="$(fuser /tmp/bing-5555.lock 2>/dev/null | tr -s ' ' | sed 's/^ //')"
 WEB_LOGIN="$(docker ps --format '{{{{.Names}}}}' | grep '^rewards-web-login-' | paste -sd, - || true)"
 WEB_IMAGE_RUNS="$(docker ps -q --filter ancestor='rewards-farmer-main-rewards-farmer:latest' | wc -l)"
 MOBILE_PROC="$(ps -eo pid,cmd | grep -E 'bing.sh run|bing.sh use' | grep -v grep || true)"
 ACTIVE_PROFILE="$(./bing.sh current 2>/dev/null || true)"
+RUNNING_PROFILE="$(ps -eo args | awk '/[b]ing\\.sh run/ {{for (i=1; i<=NF; i++) if ($i==\"--profile\" && i<NF) {{print $(i+1); exit}}}}')"
+DONE_TODAY="$(for f in "$PWD"/logs/bing-*-daily-"$TODAY"-*.log; do [ -e "$f" ] || continue; grep -q 'DONE state=daily_done' "$f" || continue; base="${{f##*/}}"; profile="${{base#bing-}}"; profile="${{profile%-daily-*}}"; printf '%s\\n' "$profile"; done | sort -u | paste -sd, - || true)"
+if [ -n "$MOBILE_PROC" ]; then MOBILE_RUNNING=1; else MOBILE_RUNNING=0; fi
 echo "MAINTENANCE=$MAINTENANCE_STATE"
 echo "LOCK_HOLDERS=$LOCK_HOLDERS"
 echo "WEB_LOGIN_CONTAINERS=$WEB_LOGIN"
 echo "WEB_IMAGE_RUNS=$WEB_IMAGE_RUNS"
 echo "ACTIVE_PROFILE=$ACTIVE_PROFILE"
+echo "RUNNING_PROFILE=$RUNNING_PROFILE"
+echo "DONE_TODAY=$DONE_TODAY"
+echo "MOBILE_RUNNING=$MOBILE_RUNNING"
 echo "MOBILE_PROCESSES_BEGIN"
 echo "$MOBILE_PROC"
 echo "MOBILE_PROCESSES_END"
@@ -579,7 +588,13 @@ class ActionMenuScreen(ModalScreen[str | None]):
     def compose(self) -> ComposeResult:
         with Vertical(id="action-menu-modal"):
             yield Label("Operator menu (X)", id="action-menu-title")
-            options = [Option(f"{item.shortcut:>10}  {item.label}", id=item.action) for item in self.items]
+            options: list[Option] = []
+            current_group = ""
+            for item in self.items:
+                if item.group != current_group:
+                    current_group = item.group
+                    options.append(Option(f"── {current_group} ──", disabled=True))
+                options.append(Option(f"{item.shortcut:>10}  {item.label}", id=item.action))
             yield OptionList(*options, id="action-menu-list")
             yield Static("", id="action-menu-details")
             yield Static("Enter: run · Esc: close", id="action-menu-hint")
@@ -716,6 +731,7 @@ class RewardsOperatorTUI(App[None]):
 
     ACTION_MENU_ITEMS = [
         MenuEntry(
+            "Overview",
             "refresh_profiles",
             "Refresh profiles",
             "L",
@@ -723,6 +739,7 @@ class RewardsOperatorTUI(App[None]):
             "Reloads mobile/web profile inventory in the left table.",
         ),
         MenuEntry(
+            "Overview",
             "busy_check",
             "Server busy check",
             "B",
@@ -730,6 +747,7 @@ class RewardsOperatorTUI(App[None]):
             "Shows lock holders, running containers and active profile context.",
         ),
         MenuEntry(
+            "Onboarding",
             "add_profile",
             "Add profile (web+mobile)",
             "A",
@@ -737,6 +755,7 @@ class RewardsOperatorTUI(App[None]):
             "Runs full onboarding helper flow for a new profile name.",
         ),
         MenuEntry(
+            "Onboarding",
             "prepare_mobile",
             "Prepare mobile profile",
             "P",
@@ -744,6 +763,7 @@ class RewardsOperatorTUI(App[None]):
             "Rebuilds mobile profile seed and validates pre-login wall gate.",
         ),
         MenuEntry(
+            "Views",
             "start_web",
             "Start web view",
             "W",
@@ -751,6 +771,7 @@ class RewardsOperatorTUI(App[None]):
             "Starts noVNC login container and opens local web tunnel.",
         ),
         MenuEntry(
+            "Views",
             "start_mobile",
             "Start mobile view",
             "M",
@@ -758,6 +779,7 @@ class RewardsOperatorTUI(App[None]):
             "Switches active profile and opens local scrcpy view path.",
         ),
         MenuEntry(
+            "Views",
             "start_both",
             "Start both views",
             "O",
@@ -765,6 +787,7 @@ class RewardsOperatorTUI(App[None]):
             "Starts WEB and MOBILE view workflow for one selected profile.",
         ),
         MenuEntry(
+            "Runs",
             "run_single_daily",
             "Run single orchestrated flow",
             "S",
@@ -772,6 +795,7 @@ class RewardsOperatorTUI(App[None]):
             "Runs one controlled mobile+web pass and skips when no actions/slot unavailable.",
         ),
         MenuEntry(
+            "Validation",
             "verify_web",
             "Verify web login",
             "1",
@@ -779,6 +803,7 @@ class RewardsOperatorTUI(App[None]):
             "Confirms Edge profile is signed in (state=signed_in).",
         ),
         MenuEntry(
+            "Validation",
             "verify_mobile",
             "Verify mobile post-login",
             "2",
@@ -786,6 +811,7 @@ class RewardsOperatorTUI(App[None]):
             "Checks mobile profile is ready after manual Bing login.",
         ),
         MenuEntry(
+            "Maintenance",
             "maintenance_status",
             "Maintenance status",
             "T",
@@ -793,6 +819,7 @@ class RewardsOperatorTUI(App[None]):
             "Prints maintenance flag and active server process/container state.",
         ),
         MenuEntry(
+            "Maintenance",
             "kill_soft",
             "Kill switch soft",
             "K",
@@ -800,6 +827,7 @@ class RewardsOperatorTUI(App[None]):
             "Enables maintenance and gracefully stops active automation.",
         ),
         MenuEntry(
+            "Maintenance",
             "kill_hard",
             "Kill switch hard",
             "Shift+H",
@@ -807,6 +835,7 @@ class RewardsOperatorTUI(App[None]):
             "Escalates to force-stop after soft timeout when needed.",
         ),
         MenuEntry(
+            "Maintenance",
             "maintenance_disable",
             "Disable maintenance",
             "D",
@@ -814,6 +843,7 @@ class RewardsOperatorTUI(App[None]):
             "Removes maintenance gate and allows normal automation flow.",
         ),
         MenuEntry(
+            "Recovery",
             "resume_preview",
             "Resume preview",
             "V",
@@ -821,6 +851,7 @@ class RewardsOperatorTUI(App[None]):
             "Shows which profiles are incomplete without starting runs.",
         ),
         MenuEntry(
+            "Recovery",
             "resume_run",
             "Resume run",
             "R",
@@ -828,6 +859,7 @@ class RewardsOperatorTUI(App[None]):
             "Starts resume in background and returns PID/log path immediately.",
         ),
         MenuEntry(
+            "Recovery",
             "resume_tail",
             "Resume tail/status",
             "Y",
@@ -835,6 +867,7 @@ class RewardsOperatorTUI(App[None]):
             "Shows whether resume is still running and tails latest resume log.",
         ),
         MenuEntry(
+            "Views",
             "stop_views",
             "Stop local views",
             "C",
@@ -870,6 +903,10 @@ class RewardsOperatorTUI(App[None]):
         super().__init__()
         self.ops = ops or ProfileOps(default_cfg())
         self.operation_running = False
+        self.mobile_profiles: set[str] = set()
+        self.web_profiles: set[str] = set()
+        self.running_profile: str | None = None
+        self.done_today_profiles: set[str] = set()
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -885,7 +922,7 @@ class RewardsOperatorTUI(App[None]):
 
     def on_mount(self) -> None:
         table = self.query_one("#profiles", DataTable)
-        table.add_columns("Profile", "Mobile", "Web")
+        table.add_columns("Profile", "M", "W", "State", "Today")
         table.cursor_type = "row"
         table.zebra_stripes = True
         self.action_refresh_profiles()
@@ -904,7 +941,7 @@ class RewardsOperatorTUI(App[None]):
         if row_index is None or row_index < 0:
             row_index = 0
         row = table.get_row_at(row_index)
-        profile = str(row[0]).strip()
+        profile = row[0].plain if isinstance(row[0], Text) else str(row[0]).strip()
         return profile or None
 
     def _set_status(self, text: str) -> None:
@@ -985,14 +1022,48 @@ class RewardsOperatorTUI(App[None]):
         if on_complete is not None:
             on_complete(result)
 
-    def _update_profile_table(self, result: OperationResult) -> None:
-        mobile = set(result.data.get("mobile", []))
-        web = set(result.data.get("web", []))
-        profiles = sorted(mobile | web)
+    def _render_profile_table(self) -> None:
+        profiles = sorted(self.mobile_profiles | self.web_profiles | self.done_today_profiles)
         table = self.query_one("#profiles", DataTable)
+        current = self._selected_profile()
         table.clear(columns=False)
         for profile in profiles:
-            table.add_row(profile, "yes" if profile in mobile else "no", "yes" if profile in web else "no", key=profile)
+            if profile == self.running_profile:
+                profile_cell = Text(profile, style="bold yellow")
+                state_cell = Text("RUN", style="bold yellow")
+            elif profile in self.done_today_profiles:
+                profile_cell = Text(profile, style="green")
+                state_cell = Text("IDLE", style="white")
+            else:
+                profile_cell = Text(profile)
+                state_cell = Text("IDLE", style="white")
+
+            mobile_cell = Text("●", style="green") if profile in self.mobile_profiles else Text("·", style="grey50")
+            web_cell = Text("●", style="cyan") if profile in self.web_profiles else Text("·", style="grey50")
+            today_cell = Text("DONE", style="green") if profile in self.done_today_profiles else Text("—", style="grey50")
+            table.add_row(profile_cell, mobile_cell, web_cell, state_cell, today_cell, key=profile)
+        if current and current in profiles:
+            table.move_cursor(row=profiles.index(current))
+
+    def _update_profile_table(self, result: OperationResult) -> None:
+        self.mobile_profiles = set(result.data.get("mobile", []))
+        self.web_profiles = set(result.data.get("web", []))
+        self._render_profile_table()
+
+    def _update_busy_state(self, result: OperationResult) -> None:
+        data = result.data
+        running_profile = data.get("RUNNING_PROFILE", "").strip()
+        if not running_profile and data.get("MOBILE_RUNNING", "0") == "1":
+            active = data.get("ACTIVE_PROFILE", "").strip()
+            if active.startswith("active="):
+                active_name = active.split("=", 1)[1].strip()
+                if active_name and active_name != "none":
+                    running_profile = active_name
+        self.running_profile = running_profile or None
+
+        done_raw = data.get("DONE_TODAY", "")
+        self.done_today_profiles = {name.strip() for name in done_raw.split(",") if name.strip()}
+        self._render_profile_table()
 
     def _run_profile_operation(
         self,
@@ -1057,7 +1128,7 @@ class RewardsOperatorTUI(App[None]):
             action()
 
     def action_busy_check(self) -> None:
-        self._run_operation("Server busy check", self.ops.server_busy_check)
+        self._run_operation("Server busy check", self.ops.server_busy_check, self._update_busy_state)
 
     def action_add_profile(self) -> None:
         self.push_screen(

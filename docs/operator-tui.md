@@ -23,7 +23,8 @@ py -3 tools\profile_tui.py --no-mouse
 - command output goes to the right-side log panel,
 - profile table is built from:
   - mobile variants (`~/redroid-variants`),
-  - web profiles (`~/rewards-farmer-main/edge-profiles`).
+  - web profiles (`~/rewards-farmer-main/edge-profiles`),
+- left panel columns are compact (`Profile | M | W | State | Today`) for readability.
 
 ## Keybindings
 
@@ -54,6 +55,7 @@ all operations are available from the `x` popup menu.
 In popup menu, highlighted action now shows:
 - command/script it runs,
 - short explanation of expected behavior.
+- actions are grouped by workflow area (Overview, Onboarding, Views, Runs, Validation, Maintenance, Recovery).
 - for `r` (resume run), output includes `pid` and `log=...` so you can follow progress.
 - use `y` to quickly inspect whether resume is still running and what it logs now.
 - `s` does:
@@ -62,6 +64,9 @@ In popup menu, highlighted action now shows:
   - web bonus claim (`run_task.sh bonus_points`) when web is available,
   - summary with skip reasons when actions are unavailable.
 - `s` streams running logs live into `RichLog` (not only at the end).
+- after `b` (busy check), profile rows are color-marked:
+  - yellow + `RUN` for currently running profile,
+  - green + `DONE` when the profile already completed daily run today.
 
 If moving mouse prints escape-like garbage in your terminal, run with
 `--no-mouse` (terminal mouse reporting disabled).
