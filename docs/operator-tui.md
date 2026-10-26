@@ -34,6 +34,7 @@ py -3 tools\profile_tui.py --mouse
 ## Keybindings
 
 - `x` open centered action menu (recommended)
+- `Enter` open action picker for currently selected profile row
 - `l` refresh profiles
 - `b` busy-state check
 - `g` open stats center (per-profile totals/daily/gain/done-today)
@@ -77,6 +78,8 @@ In popup menu, highlighted action now shows:
 - stats center (`g`) opens as a dedicated modal view built from:
   - latest `logs/points-snapshot-*.tsv` (if available),
   - latest `logs/bing-<profile>-daily-*.log` for done-today and gain.
+  - and prefers per-profile latest `bing-<profile>-points-snapshot-*.log` for
+    **current profile total** (`Total now` column).
 
 Mouse is disabled by default. Use `--mouse` only when your terminal handles
 mouse reporting correctly.

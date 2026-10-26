@@ -24,9 +24,10 @@ class FakeOps:
                 "web": ["r_domena_01"],
                 "mobile_auth": {"r_domena_01": "logged_in"},
                 "web_auth": {"r_domena_01": "logged_in"},
+                "today_status": {"r_domena_01": "incomplete"},
             }
             if self._with_profiles
-            else {"mobile": [], "web": [], "mobile_auth": {}, "web_auth": {}}
+            else {"mobile": [], "web": [], "mobile_auth": {}, "web_auth": {}, "today_status": {}}
         )
         return OperationResult("list_profiles", 0, "ok", data=data)
 
@@ -71,6 +72,7 @@ class FakeOps:
                         "daily_points": "95/120",
                         "gain_today": "55",
                         "done_today": False,
+                        "total_source": "points_snapshot_log",
                         "latest_daily_log": "bing-r_domena_01-daily-20261026-010000.log",
                     }
                 ],
@@ -167,6 +169,12 @@ class ProfileTUITests(unittest.TestCase):
                 self.assertIn(("collect_stats",), ops.calls)
                 await pilot.press("escape")
                 await pilot.pause(0.2)
+
+                app.action_open_profile_actions()
+                await pilot.pause(0.2)
+                await pilot.press("enter")
+                await pilot.pause(0.3)
+                self.assertIn(("run_single_daily_stream", "r_domena_01"), ops.calls)
 
                 await pilot.press("c")
                 await pilot.pause(0.2)
