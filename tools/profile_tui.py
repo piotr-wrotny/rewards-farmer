@@ -24,6 +24,17 @@ from textual.widgets import Button, DataTable, Footer, Header, Input, Label, Opt
 from textual.widgets.option_list import Option
 
 
+MOUSE_RESET_ANSI = "\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l"
+
+
+def _reset_terminal_mouse_modes() -> None:
+    try:
+        sys.stdout.write(MOUSE_RESET_ANSI)
+        sys.stdout.flush()
+    except Exception:
+        pass
+
+
 @dataclass
 class Config:
     server: str
@@ -1596,6 +1607,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
+    _reset_terminal_mouse_modes()
     args = parse_args()
     cfg = Config(
         server=args.server,
@@ -1610,7 +1622,10 @@ def main() -> int:
     )
     ops = ProfileOps(cfg=cfg, open_browser=not args.no_browser)
     app = RewardsOperatorTUI(ops=ops)
-    app.run(mouse=args.mouse and not args.no_mouse)
+    try:
+        app.run(mouse=args.mouse and not args.no_mouse)
+    finally:
+        _reset_terminal_mouse_modes()
     return 0
 
 

@@ -83,6 +83,8 @@ In popup menu, highlighted action now shows:
 
 Mouse is disabled by default. Use `--mouse` only when your terminal handles
 mouse reporting correctly.
+Additionally, TUI now resets ANSI mouse-tracking modes on startup/exit to avoid
+terminal artifacts after interrupted runs.
 
 ## Maintenance and resume integration
 
