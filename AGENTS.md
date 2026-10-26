@@ -1,5 +1,11 @@
 # Rewards Farmer — runbook and system map
 
+Quick navigation for fresh sessions:
+
+1. `docs/START-HERE.md` — short operational handoff
+2. `profiles/README.md` — cron grid + profile registry (source of truth)
+3. this file (`AGENTS.md`) — full system detail and incident history
+
 **Status: DELIVERED (2026-09-14). Maintenance only.** The farm runs 13 signed-in
 Microsoft Rewards profiles unattended on the server. No new features are planned;
 changes are limited to breakage fixes and (someday, not now) the points-observer

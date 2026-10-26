@@ -3,9 +3,12 @@
 Automation for MS Rewards based on [https://youtu.be/4qdPcMNaioA](https://youtu.be/4qdPcMNaioA).
 
 > **Note (2026-09-14):** this readme describes the original upstream web setup and
-> is kept as provenance. The deployed system — a 13-profile mobile Bing Rewards
-> farm (ReDroid + `bing.sh`) with the web flow frozen as fallback — is documented
-> in **`AGENTS.md`** (runbook + live/dead system map). Start there.
+> is kept as provenance.
+>
+> For current production operations use:
+> 1. **`docs/START-HERE.md`** (quick operator handoff),
+> 2. **`AGENTS.md`** (full runbook + live/dead system map),
+> 3. **`profiles/README.md`** (source of truth for cron/profile registry).
 
 # Running Instructions
 
