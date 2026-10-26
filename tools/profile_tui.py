@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shlex
 import subprocess
 import sys
@@ -14,6 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
+from rich.markup import escape as rich_escape
 from rich.text import Text
 from textual import on
 from textual.app import App, ComposeResult
@@ -25,6 +27,8 @@ from textual.widgets.option_list import Option
 
 
 MOUSE_RESET_ANSI = "\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l"
+ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+CTRL_RE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
 
 
 def _reset_terminal_mouse_modes() -> None:
@@ -33,6 +37,13 @@ def _reset_terminal_mouse_modes() -> None:
         sys.stdout.flush()
     except Exception:
         pass
+
+
+def _sanitize_terminal_text(text: str) -> str:
+    text = ANSI_ESCAPE_RE.sub("", text)
+    text = text.replace("\r", "")
+    text = CTRL_RE.sub("", text)
+    return text
 
 
 @dataclass
@@ -1476,8 +1487,10 @@ class RewardsOperatorTUI(App[None]):
         return profile or None
 
     def _set_status(self, text: str) -> None:
-        self.query_one("#status", Static).update(text)
-        self.query_one("#processes", Static).update(f"Local processes: {self.ops.proc.summary()}")
+        safe = rich_escape(_sanitize_terminal_text(text))
+        self.query_one("#status", Static).update(safe)
+        proc_safe = rich_escape(_sanitize_terminal_text(self.ops.proc.summary()))
+        self.query_one("#processes", Static).update(f"Local processes: {proc_safe}")
 
     def _log_result(self, title: str, result: OperationResult) -> None:
         log = self.query_one("#log", RichLog)
@@ -1485,13 +1498,13 @@ class RewardsOperatorTUI(App[None]):
         log.write(f"[bold]{title}[/bold] [{state}] rc={result.rc}")
         if result.output.strip():
             for line in result.output.splitlines():
-                log.write(line)
+                log.write(rich_escape(_sanitize_terminal_text(line)))
         else:
             log.write("(no output)")
         log.write("")
 
     def _log_live_line(self, line: str) -> None:
-        self.query_one("#log", RichLog).write(line)
+        self.query_one("#log", RichLog).write(rich_escape(_sanitize_terminal_text(line)))
 
     def _run_operation(
         self,
