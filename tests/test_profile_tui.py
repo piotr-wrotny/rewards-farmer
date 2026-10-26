@@ -105,6 +105,11 @@ class FakeOps:
         emit("line")
         return OperationResult("run_single_daily_stream", 0, "line")
 
+    def run_batch_plan_stream(self, profiles: list[str], run_mobile: bool, run_web: bool, emit) -> OperationResult:  # noqa: ANN001
+        self.calls.append(("run_batch_plan_stream", tuple(profiles), run_mobile, run_web))
+        emit("batch")
+        return OperationResult("run_batch_plan_stream", 0, "batch")
+
     def add_profile_web_and_mobile(self, profile: str) -> OperationResult:
         self.calls.append(("add_profile_web_and_mobile", profile))
         return OperationResult("add_profile_web_and_mobile", 0, "ok")
@@ -175,6 +180,14 @@ class ProfileTUITests(unittest.TestCase):
                 await pilot.press("enter")
                 await pilot.pause(0.3)
                 self.assertIn(("run_single_daily_stream", "r_domena_01"), ops.calls)
+
+                await pilot.press("u")
+                await pilot.pause(0.2)
+                await pilot.press("a")
+                await pilot.pause(0.1)
+                await pilot.press("s")
+                await pilot.pause(0.3)
+                self.assertIn(("run_batch_plan_stream", ("r_domena_01",), True, False), ops.calls)
 
                 await pilot.press("c")
                 await pilot.pause(0.2)

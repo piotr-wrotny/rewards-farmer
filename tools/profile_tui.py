@@ -717,6 +717,88 @@ exit 0
     def run_single_daily(self, profile: str) -> OperationResult:
         return self.run_single_daily_stream(profile, lambda _line: None)
 
+    def run_batch_plan_stream(
+        self,
+        profiles: list[str],
+        run_mobile: bool,
+        run_web: bool,
+        on_line: Callable[[str], None],
+    ) -> OperationResult:
+        if not profiles:
+            return OperationResult("run_batch_plan", 2, "No profiles selected.")
+        for profile in profiles:
+            self.validate_profile(profile)
+        if not run_mobile and not run_web:
+            return OperationResult("run_batch_plan", 2, "Enable mobile or web mode.")
+
+        profile_list = " ".join(shlex.quote(profile) for profile in profiles)
+        mobile_flag = "1" if run_mobile else "0"
+        web_flag = "1" if run_web else "0"
+        remote = f"""
+set -u -o pipefail
+cd {self.remote_repo_expr()}
+
+PROFILES=({profile_list})
+RUN_MOBILE={mobile_flag}
+RUN_WEB={web_flag}
+FAILED=0
+
+echo "[batch] maintenance=enable"
+bash scripts/server_maintenance.sh enable
+MAINT_ENABLED=1
+cleanup() {{
+  if [ "${{MAINT_ENABLED:-0}}" = "1" ]; then
+    echo "[batch] maintenance=disable"
+    bash scripts/server_maintenance.sh disable || true
+  fi
+}}
+trap cleanup EXIT
+
+for p in "${{PROFILES[@]}}"; do
+  echo "[batch] profile=$p start"
+  if [ "$RUN_MOBILE" = "1" ]; then
+    echo "[batch] profile=$p mobile=daily start"
+    set +e
+    BING_IGNORE_MAINTENANCE=1 ./bing.sh run daily --profile "$p" --no-debug
+    rc=$?
+    set -e
+    if [ "$rc" -ne 0 ]; then
+      FAILED=1
+      echo "[batch] profile=$p mobile=daily failed rc=$rc"
+    else
+      echo "[batch] profile=$p mobile=daily ok"
+    fi
+  fi
+
+  if [ "$RUN_WEB" = "1" ]; then
+    echo "[batch] profile=$p web=run_daily start"
+    set +e
+    REWARDS_IGNORE_MAINTENANCE=1 ./run_daily.sh "$p"
+    rc=$?
+    set -e
+    if [ "$rc" -ne 0 ]; then
+      FAILED=1
+      echo "[batch] profile=$p web=run_daily failed rc=$rc"
+    else
+      echo "[batch] profile=$p web=run_daily ok"
+    fi
+  fi
+  echo "[batch] profile=$p end"
+done
+
+MAINT_ENABLED=0
+echo "[batch] maintenance=disable"
+bash scripts/server_maintenance.sh disable
+
+if [ "$FAILED" -ne 0 ]; then
+  echo "[batch] summary=failed"
+  exit 1
+fi
+echo "[batch] summary=ok"
+exit 0
+"""
+        return self._remote_result_stream("run_batch_plan", remote, on_line)
+
     def stop_local_views(self) -> OperationResult:
         self.proc.stop("scrcpy")
         self.proc.stop("mobile_tunnel")
@@ -861,6 +943,111 @@ class ProfileActionScreen(ModalScreen[str | None]):
         self.dismiss(None)
 
     BINDINGS = [Binding("escape", "dismiss_menu", "Close")]
+
+
+class BatchRunScreen(ModalScreen[dict[str, Any] | None]):
+    def __init__(self, profiles: list[str]) -> None:
+        super().__init__()
+        self.profiles = profiles
+        self.selected: set[str] = set()
+        self.run_mobile = True
+        self.run_web = False
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="action-menu-modal"):
+            yield Label("Batch run planner", id="action-menu-title")
+            options = [Option(f"[ ] {profile}", id=profile) for profile in self.profiles]
+            yield OptionList(*options, id="batch-profile-list")
+            yield Static("", id="batch-plan-details")
+            yield Static(
+                "Enter: toggle profile · M: toggle mobile · W: toggle web · A: all · N: none · S: start · Esc: close",
+                id="action-menu-hint",
+            )
+
+    def on_mount(self) -> None:
+        self.query_one("#batch-profile-list", OptionList).focus()
+        self._refresh_details()
+
+    @on(OptionList.OptionSelected, "#batch-profile-list")
+    def on_option_selected(self, event: OptionList.OptionSelected) -> None:
+        if not event.option_id:
+            return
+        self._toggle_profile(event.option_id)
+
+    def _toggle_profile(self, profile: str) -> None:
+        if profile in self.selected:
+            self.selected.remove(profile)
+        else:
+            self.selected.add(profile)
+        self._refresh_options()
+        self._refresh_details()
+
+    def _refresh_options(self) -> None:
+        option_list = self.query_one("#batch-profile-list", OptionList)
+        option_list.clear_options()
+        option_list.add_options(
+            [Option(f"[{'x' if p in self.selected else ' '}] {p}", id=p) for p in self.profiles],
+        )
+
+    def _refresh_details(self) -> None:
+        per_mobile_min = 22
+        per_web_min = 8
+        total_per_profile = (per_mobile_min if self.run_mobile else 0) + (per_web_min if self.run_web else 0)
+        selected_count = len(self.selected)
+        total_min = total_per_profile * selected_count
+        details = (
+            f"[b]Selected[/b]: {selected_count} / {len(self.profiles)}\n"
+            f"[b]Mobile[/b]: {'ON' if self.run_mobile else 'OFF'}  "
+            f"[b]Web[/b]: {'ON' if self.run_web else 'OFF'}\n"
+            f"[b]Estimated duration[/b]: ~{total_min} min (mobile={per_mobile_min}m/profile, web={per_web_min}m/profile)\n"
+            "[b]Maintenance[/b]: auto ON at start, auto OFF after all jobs finish."
+        )
+        self.query_one("#batch-plan-details", Static).update(details)
+
+    def action_toggle_mobile(self) -> None:
+        self.run_mobile = not self.run_mobile
+        self._refresh_details()
+
+    def action_toggle_web(self) -> None:
+        self.run_web = not self.run_web
+        self._refresh_details()
+
+    def action_select_all(self) -> None:
+        self.selected = set(self.profiles)
+        self._refresh_options()
+        self._refresh_details()
+
+    def action_clear_all(self) -> None:
+        self.selected.clear()
+        self._refresh_options()
+        self._refresh_details()
+
+    def action_start_batch(self) -> None:
+        if not self.selected:
+            self.app.notify("Select at least one profile", severity="warning")
+            return
+        if not self.run_mobile and not self.run_web:
+            self.app.notify("Enable mobile or web run mode", severity="warning")
+            return
+        self.dismiss(
+            {
+                "profiles": sorted(self.selected),
+                "run_mobile": self.run_mobile,
+                "run_web": self.run_web,
+            },
+        )
+
+    def action_dismiss_menu(self) -> None:
+        self.dismiss(None)
+
+    BINDINGS = [
+        Binding("escape", "dismiss_menu", "Close"),
+        Binding("m", "toggle_mobile", "Toggle mobile"),
+        Binding("w", "toggle_web", "Toggle web"),
+        Binding("a", "select_all", "Select all"),
+        Binding("n", "clear_all", "Clear all"),
+        Binding("s", "start_batch", "Start"),
+    ]
 
 
 class StatsScreen(ModalScreen[None]):
@@ -1114,6 +1301,14 @@ class RewardsOperatorTUI(App[None]):
             "Runs one controlled mobile+web pass and skips when no actions/slot unavailable.",
         ),
         MenuEntry(
+            "Runs",
+            "batch_run_planner",
+            "Batch run planner",
+            "U",
+            "select profiles + run mobile/web with maintenance auto ON/OFF",
+            "Opens a profile-selection window with runtime estimate and executes selected runs in sequence.",
+        ),
+        MenuEntry(
             "Validation",
             "verify_web",
             "Verify web login",
@@ -1208,6 +1403,7 @@ class RewardsOperatorTUI(App[None]):
         Binding("m", "start_mobile", "Start mobile view", show=False),
         Binding("o", "start_both", "Start both views", show=False),
         Binding("s", "run_single_daily", "Run single daily", show=False),
+        Binding("u", "batch_run_planner", "Batch planner", show=False),
         Binding("1", "verify_web", "Verify web", show=False),
         Binding("2", "verify_mobile", "Verify mobile", show=False),
         Binding("t", "maintenance_status", "Maintenance status", show=False),
@@ -1474,6 +1670,9 @@ class RewardsOperatorTUI(App[None]):
             callback=lambda value: execute(value) if value else None,
         )
 
+    def _known_profiles(self) -> list[str]:
+        return sorted(self.mobile_profiles | self.web_profiles)
+
     def action_refresh_profiles(self) -> None:
         self._run_operation("Refresh profiles", self.ops.list_profiles, self._update_profile_table)
 
@@ -1534,6 +1733,26 @@ class RewardsOperatorTUI(App[None]):
 
     def action_run_single_daily(self) -> None:
         self._run_profile_stream_operation("Run single orchestrated flow", self.ops.run_single_daily_stream)
+
+    def action_batch_run_planner(self) -> None:
+        profiles = self._known_profiles()
+        if not profiles:
+            self.notify("No profiles loaded. Refresh first.", severity="warning")
+            return
+        self.push_screen(BatchRunScreen(profiles), callback=self._start_batch_plan)
+
+    def _start_batch_plan(self, plan: dict[str, Any] | None) -> None:
+        if not plan:
+            return
+        profiles = list(plan.get("profiles", []))
+        run_mobile = bool(plan.get("run_mobile", False))
+        run_web = bool(plan.get("run_web", False))
+        mode = f"mobile={'on' if run_mobile else 'off'} web={'on' if run_web else 'off'}"
+        self._run_operation(
+            f"Batch run {len(profiles)} profiles ({mode})",
+            stream_operation=lambda emit: self.ops.run_batch_plan_stream(profiles, run_mobile, run_web, emit),
+            on_complete=lambda _result: self.action_refresh_profiles(),
+        )
 
     def action_verify_web(self) -> None:
         self._run_profile_operation("Verify web", self.ops.verify_web_login)

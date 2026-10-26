@@ -30,6 +30,11 @@ py -3 tools\profile_tui.py --mouse
 - `M` and `W` each show two dots:
   - first dot (orange) = profile exists,
   - second dot = auth status (`green` logged-in, `red` logged-out, `gray` unknown).
+- `Today` column:
+  - `DONE` = daily completed today,
+  - `INCOMP` = daily attempted today but incomplete/error marker,
+  - `RAN` = some daily log exists today without final done/incomplete marker,
+  - `NONE` = no daily run log for today.
 
 ## Keybindings
 
@@ -38,6 +43,7 @@ py -3 tools\profile_tui.py --mouse
 - `l` refresh profiles
 - `b` busy-state check
 - `g` open stats center (per-profile totals/daily/gain/done-today)
+- `u` open batch run planner (select many profiles + estimate + execute)
 - `a` add profile flow (mobile prepare + web view + mobile view)
 - `p` prepare mobile profile only
 - `w` start web view/tunnel
@@ -80,6 +86,12 @@ In popup menu, highlighted action now shows:
   - latest `logs/bing-<profile>-daily-*.log` for done-today and gain.
   - and prefers per-profile latest `bing-<profile>-points-snapshot-*.log` for
     **current profile total** (`Total now` column).
+- batch planner (`u`) behavior:
+  - choose profiles (multi-select),
+  - choose mode (`mobile`, `web`, or both),
+  - see rough estimate before start,
+  - execution is sequential and streams logs live,
+  - maintenance mode is automatically enabled at start and disabled at the end.
 
 Mouse is disabled by default. Use `--mouse` only when your terminal handles
 mouse reporting correctly.
