@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import shlex
 import subprocess
 import sys
@@ -162,9 +163,11 @@ class ProfileOps:
         rc = proc.wait()
         return OperationResult(name=name, rc=rc, output="\n".join(lines), data=data or {})
 
-    def _parse_profiles(self, text: str) -> tuple[list[str], list[str]]:
+    def _parse_profiles(self, text: str) -> tuple[list[str], list[str], dict[str, str], dict[str, str]]:
         mobile: list[str] = []
         web: list[str] = []
+        mobile_auth: dict[str, str] = {}
+        web_auth: dict[str, str] = {}
         section = ""
         for raw in text.splitlines():
             line = raw.strip()
@@ -174,13 +177,27 @@ class ProfileOps:
             if line == "__WEB__":
                 section = "web"
                 continue
+            if line == "__MOBILE_AUTH__":
+                section = "mobile_auth"
+                continue
+            if line == "__WEB_AUTH__":
+                section = "web_auth"
+                continue
             if not line:
                 continue
             if section == "mobile":
                 mobile.append(line)
             elif section == "web":
                 web.append(line)
-        return mobile, web
+            elif section == "mobile_auth":
+                if "=" in line:
+                    profile, status = line.split("=", 1)
+                    mobile_auth[profile.strip()] = status.strip()
+            elif section == "web_auth":
+                if "=" in line:
+                    profile, status = line.split("=", 1)
+                    web_auth[profile.strip()] = status.strip()
+        return mobile, web, mobile_auth, web_auth
 
     def list_profiles(self) -> OperationResult:
         remote = f"""
@@ -190,10 +207,124 @@ echo "__MOBILE__"
 ls -1 ~/redroid-variants 2>/dev/null | sort || true
 echo "__WEB__"
 ls -1 {self.remote_repo_expr()}/edge-profiles 2>/dev/null | sort || true
+echo "__MOBILE_AUTH__"
+for p in $(ls -1 ~/redroid-variants 2>/dev/null | sort); do
+  latest="$(ls -1t "$PWD"/logs/bing-"$p"-*.log 2>/dev/null | head -1 || true)"
+  status="unknown"
+  if [ -n "$latest" ]; then
+    if grep -q 'state=wall' "$latest"; then
+      status="logged_out"
+    elif grep -Eq 'DONE state=daily_done|INCOMPLETE state=daily_incomplete|state=(done|rte|unrendered|points_snapshot)' "$latest"; then
+      status="logged_in"
+    fi
+  fi
+  echo "$p=$status"
+done
+echo "__WEB_AUTH__"
+for p in $(ls -1 {self.remote_repo_expr()}/edge-profiles 2>/dev/null | sort); do
+  if [ "$p" = "default" ]; then suffix=""; else suffix="-$p"; fi
+  latest="$(ls -1t "$PWD"/logs/web-run-login_check${{suffix}}-*.log 2>/dev/null | head -1 || true)"
+  status="unknown"
+  if [ -n "$latest" ]; then
+    if grep -q 'state=signed_in' "$latest"; then
+      status="logged_in"
+    elif grep -Eq 'state=wall|signed_out|not_signed_in' "$latest"; then
+      status="logged_out"
+    fi
+  fi
+  echo "$p=$status"
+done
 """
         result = self._remote_result("list_profiles", remote)
-        mobile, web = self._parse_profiles(result.output)
-        result.data = {"mobile": mobile, "web": web}
+        mobile, web, mobile_auth, web_auth = self._parse_profiles(result.output)
+        result.data = {"mobile": mobile, "web": web, "mobile_auth": mobile_auth, "web_auth": web_auth}
+        return result
+
+    def collect_stats(self) -> OperationResult:
+        remote = """
+set -e
+cd __REPO__
+python3 - <<'PY'
+import csv
+import datetime as dt
+import glob
+import json
+import os
+import re
+
+root = os.getcwd()
+log_dir = os.path.join(root, "logs")
+today = dt.datetime.now().strftime("%Y%m%d")
+
+profiles = set()
+mobile_dir = os.path.expanduser("~/redroid-variants")
+web_dir = os.path.join(root, "edge-profiles")
+if os.path.isdir(mobile_dir):
+    profiles.update(os.listdir(mobile_dir))
+if os.path.isdir(web_dir):
+    profiles.update(os.listdir(web_dir))
+
+snapshot_data = {}
+snapshot_files = sorted(glob.glob(os.path.join(log_dir, "points-snapshot-*.tsv")), key=os.path.getmtime, reverse=True)
+snapshot_name = os.path.basename(snapshot_files[0]) if snapshot_files else ""
+if snapshot_files:
+    with open(snapshot_files[0], newline="", encoding="utf-8") as fh:
+        reader = csv.DictReader(fh, delimiter="\\t")
+        for row in reader:
+            snapshot_data[row.get("profile", "")] = row
+
+rows = []
+for profile in sorted(p for p in profiles if p):
+    latest_daily = None
+    daily_logs = glob.glob(os.path.join(log_dir, f"bing-{profile}-daily-*.log"))
+    if daily_logs:
+        latest_daily = max(daily_logs, key=os.path.getmtime)
+
+    done_today = False
+    daily_now = ""
+    gain_today = ""
+    if latest_daily:
+        basename = os.path.basename(latest_daily)
+        with open(latest_daily, encoding="utf-8", errors="replace") as fh:
+            content = fh.read()
+        done_today = f"-daily-{today}-" in basename and "DONE state=daily_done" in content
+        matches = re.findall(r"daily: end daily_points=(\\d+)/(\\d+)->(\\d+)/(\\d+)", content)
+        if matches:
+            start, _cap_start, end, cap = matches[-1]
+            daily_now = f"{end}/{cap}"
+            gain_today = str(int(end) - int(start))
+
+    snap = snapshot_data.get(profile, {})
+    total_points = snap.get("total_points", "")
+    if not daily_now:
+        daily_now = snap.get("daily_points", "")
+
+    rows.append(
+        {
+            "profile": profile,
+            "total_points": total_points or "",
+            "daily_points": daily_now or "",
+            "gain_today": gain_today or "",
+            "done_today": done_today,
+            "latest_daily_log": os.path.basename(latest_daily) if latest_daily else "",
+        }
+    )
+
+print(json.dumps({"snapshot_file": snapshot_name, "rows": rows}))
+PY
+"""
+        remote = remote.replace("__REPO__", self.remote_repo_expr())
+        result = self._remote_result("collect_stats", remote)
+        payload = {}
+        for line in reversed(result.output.splitlines()):
+            line = line.strip()
+            if line.startswith("{") and line.endswith("}"):
+                try:
+                    payload = json.loads(line)
+                except json.JSONDecodeError:
+                    payload = {}
+                break
+        result.data = payload if isinstance(payload, dict) else {}
         return result
 
     def server_busy_check(self) -> OperationResult:
@@ -630,6 +761,44 @@ class ActionMenuScreen(ModalScreen[str | None]):
     BINDINGS = [Binding("escape", "dismiss_menu", "Close")]
 
 
+class StatsScreen(ModalScreen[None]):
+    def __init__(self, result: OperationResult) -> None:
+        super().__init__()
+        self.result = result
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="stats-modal"):
+            yield Label("Profile stats center", id="stats-title")
+            yield Static("", id="stats-meta")
+            yield DataTable(id="stats-table")
+            yield Static("Esc: close", id="stats-hint")
+
+    def on_mount(self) -> None:
+        rows = self.result.data.get("rows", [])
+        snapshot = self.result.data.get("snapshot_file", "")
+        meta = f"Source snapshot: {snapshot}" if snapshot else "Source snapshot: none (using daily logs only)"
+        self.query_one("#stats-meta", Static).update(meta)
+
+        table = self.query_one("#stats-table", DataTable)
+        table.add_columns("Profile", "Total", "Daily", "Gain", "Done today", "Latest daily log")
+        for row in rows:
+            done = Text("YES", style="green") if row.get("done_today") else Text("NO", style="grey50")
+            table.add_row(
+                str(row.get("profile", "")),
+                str(row.get("total_points", "")),
+                str(row.get("daily_points", "")),
+                str(row.get("gain_today", "")),
+                done,
+                str(row.get("latest_daily_log", "")),
+            )
+        table.focus()
+
+    def action_close_stats(self) -> None:
+        self.dismiss(None)
+
+    BINDINGS = [Binding("escape", "close_stats", "Close")]
+
+
 class RewardsOperatorTUI(App[None]):
     CSS = """
     Screen {
@@ -641,8 +810,8 @@ class RewardsOperatorTUI(App[None]):
     }
 
     #left {
-        width: 44;
-        min-width: 36;
+        width: 56;
+        min-width: 46;
         border: round $primary;
         padding: 1;
         margin-right: 1;
@@ -660,6 +829,13 @@ class RewardsOperatorTUI(App[None]):
 
     #profiles {
         height: 1fr;
+    }
+
+    #profiles-legend {
+        margin-top: 1;
+        border: round $surface;
+        padding: 0 1;
+        height: auto;
     }
 
     #status {
@@ -727,6 +903,38 @@ class RewardsOperatorTUI(App[None]):
         margin-top: 1;
         color: $foreground 60%;
     }
+
+    #stats-modal {
+        width: 140;
+        height: auto;
+        max-height: 90%;
+        border: round $accent;
+        background: $panel;
+        padding: 1 2;
+        align: center middle;
+    }
+
+    #stats-title {
+        text-style: bold;
+        color: $accent;
+        margin-bottom: 1;
+    }
+
+    #stats-meta {
+        margin-bottom: 1;
+    }
+
+    #stats-table {
+        height: 1fr;
+        min-height: 15;
+        max-height: 28;
+        border: round $surface;
+    }
+
+    #stats-hint {
+        margin-top: 1;
+        color: $foreground 60%;
+    }
     """
 
     ACTION_MENU_ITEMS = [
@@ -745,6 +953,14 @@ class RewardsOperatorTUI(App[None]):
             "B",
             "fuser/docker/ps probes",
             "Shows lock holders, running containers and active profile context.",
+        ),
+        MenuEntry(
+            "Overview",
+            "show_stats",
+            "Show stats center",
+            "G",
+            "logs/points-snapshot-*.tsv + bing-*-daily-*.log",
+            "Opens centralized per-profile stats (total, daily, gain, done-today).",
         ),
         MenuEntry(
             "Onboarding",
@@ -881,6 +1097,7 @@ class RewardsOperatorTUI(App[None]):
         Binding("x", "open_action_menu", "Menu"),
         Binding("l", "refresh_profiles", "Refresh profiles", show=False),
         Binding("b", "busy_check", "Busy check", show=False),
+        Binding("g", "show_stats", "Show stats", show=False),
         Binding("a", "add_profile", "Add web+mobile", show=False),
         Binding("p", "prepare_mobile", "Prepare mobile", show=False),
         Binding("w", "start_web", "Start web view", show=False),
@@ -905,6 +1122,8 @@ class RewardsOperatorTUI(App[None]):
         self.operation_running = False
         self.mobile_profiles: set[str] = set()
         self.web_profiles: set[str] = set()
+        self.mobile_auth_state: dict[str, str] = {}
+        self.web_auth_state: dict[str, str] = {}
         self.running_profile: str | None = None
         self.done_today_profiles: set[str] = set()
 
@@ -914,6 +1133,7 @@ class RewardsOperatorTUI(App[None]):
             with Vertical(id="left"):
                 yield Static("Profiles", classes="panel-title")
                 yield DataTable(id="profiles")
+                yield Static("", id="profiles-legend")
             with Vertical(id="right"):
                 yield Static("Idle", id="status")
                 yield Static("Local processes: none", id="processes")
@@ -925,7 +1145,17 @@ class RewardsOperatorTUI(App[None]):
         table.add_columns("Profile", "M", "W", "State", "Today")
         table.cursor_type = "row"
         table.zebra_stripes = True
+        self._update_legend()
         self.action_refresh_profiles()
+
+    def _update_legend(self) -> None:
+        legend = (
+            "[b]Legend[/b]\n"
+            "M/W dots: [dark_orange3]●[/dark_orange3]=exists  [green]●[/green]=logged-in  "
+            "[red]●[/red]=logged-out  [grey50]●[/grey50]=unknown\n"
+            "State: [yellow]RUN[/yellow]=running now · Today: [green]DONE[/green]=daily done"
+        )
+        self.query_one("#profiles-legend", Static).update(legend)
 
     def action_app_quit(self) -> None:
         self.exit()
@@ -1027,6 +1257,21 @@ class RewardsOperatorTUI(App[None]):
         table = self.query_one("#profiles", DataTable)
         current = self._selected_profile()
         table.clear(columns=False)
+
+        def status_dot(status: str) -> Text:
+            if status == "logged_in":
+                return Text("●", style="green")
+            if status == "logged_out":
+                return Text("●", style="red")
+            return Text("●", style="grey50")
+
+        def combined_cell(exists: bool, auth_status: str) -> Text:
+            cell = Text()
+            cell.append("●", style="dark_orange3" if exists else "grey50")
+            cell.append(" ")
+            cell.append_text(status_dot(auth_status))
+            return cell
+
         for profile in profiles:
             if profile == self.running_profile:
                 profile_cell = Text(profile, style="bold yellow")
@@ -1038,8 +1283,8 @@ class RewardsOperatorTUI(App[None]):
                 profile_cell = Text(profile)
                 state_cell = Text("IDLE", style="white")
 
-            mobile_cell = Text("●", style="green") if profile in self.mobile_profiles else Text("·", style="grey50")
-            web_cell = Text("●", style="cyan") if profile in self.web_profiles else Text("·", style="grey50")
+            mobile_cell = combined_cell(profile in self.mobile_profiles, self.mobile_auth_state.get(profile, "unknown"))
+            web_cell = combined_cell(profile in self.web_profiles, self.web_auth_state.get(profile, "unknown"))
             today_cell = Text("DONE", style="green") if profile in self.done_today_profiles else Text("—", style="grey50")
             table.add_row(profile_cell, mobile_cell, web_cell, state_cell, today_cell, key=profile)
         if current and current in profiles:
@@ -1048,6 +1293,8 @@ class RewardsOperatorTUI(App[None]):
     def _update_profile_table(self, result: OperationResult) -> None:
         self.mobile_profiles = set(result.data.get("mobile", []))
         self.web_profiles = set(result.data.get("web", []))
+        self.mobile_auth_state = dict(result.data.get("mobile_auth", {}))
+        self.web_auth_state = dict(result.data.get("web_auth", {}))
         self._render_profile_table()
 
     def _update_busy_state(self, result: OperationResult) -> None:
@@ -1129,6 +1376,14 @@ class RewardsOperatorTUI(App[None]):
 
     def action_busy_check(self) -> None:
         self._run_operation("Server busy check", self.ops.server_busy_check, self._update_busy_state)
+
+    def action_show_stats(self) -> None:
+        self._run_operation("Collect stats", self.ops.collect_stats, self._open_stats_screen)
+
+    def _open_stats_screen(self, result: OperationResult) -> None:
+        if result.rc != 0:
+            return
+        self.push_screen(StatsScreen(result))
 
     def action_add_profile(self) -> None:
         self.push_screen(

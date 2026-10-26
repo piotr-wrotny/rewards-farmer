@@ -18,7 +18,16 @@ class FakeOps:
 
     def list_profiles(self) -> OperationResult:
         self.calls.append(("list_profiles",))
-        data = {"mobile": ["r_domena_01"], "web": ["r_domena_01"]} if self._with_profiles else {"mobile": [], "web": []}
+        data = (
+            {
+                "mobile": ["r_domena_01"],
+                "web": ["r_domena_01"],
+                "mobile_auth": {"r_domena_01": "logged_in"},
+                "web_auth": {"r_domena_01": "logged_in"},
+            }
+            if self._with_profiles
+            else {"mobile": [], "web": [], "mobile_auth": {}, "web_auth": {}}
+        )
         return OperationResult("list_profiles", 0, "ok", data=data)
 
     def maintenance_status(self) -> OperationResult:
@@ -46,6 +55,27 @@ class FakeOps:
     def stop_local_views(self) -> OperationResult:
         self.calls.append(("stop_local_views",))
         return OperationResult("stop_local_views", 0, "stopped")
+
+    def collect_stats(self) -> OperationResult:
+        self.calls.append(("collect_stats",))
+        return OperationResult(
+            "collect_stats",
+            0,
+            "ok",
+            data={
+                "snapshot_file": "points-snapshot-tui.tsv",
+                "rows": [
+                    {
+                        "profile": "r_domena_01",
+                        "total_points": "12345",
+                        "daily_points": "95/120",
+                        "gain_today": "55",
+                        "done_today": False,
+                        "latest_daily_log": "bing-r_domena_01-daily-20261026-010000.log",
+                    }
+                ],
+            },
+        )
 
     def resume_incomplete_mobile(self, dry_run: bool) -> OperationResult:
         self.calls.append(("resume", dry_run))
@@ -131,6 +161,12 @@ class ProfileTUITests(unittest.TestCase):
                 await pilot.press("v")
                 await pilot.pause(0.2)
                 self.assertIn(("resume", True), ops.calls)
+
+                await pilot.press("g")
+                await pilot.pause(0.2)
+                self.assertIn(("collect_stats",), ops.calls)
+                await pilot.press("escape")
+                await pilot.pause(0.2)
 
                 await pilot.press("c")
                 await pilot.pause(0.2)

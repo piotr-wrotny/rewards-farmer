@@ -25,12 +25,16 @@ py -3 tools\profile_tui.py --no-mouse
   - mobile variants (`~/redroid-variants`),
   - web profiles (`~/rewards-farmer-main/edge-profiles`),
 - left panel columns are compact (`Profile | M | W | State | Today`) for readability.
+- `M` and `W` each show two dots:
+  - first dot (orange) = profile exists,
+  - second dot = auth status (`green` logged-in, `red` logged-out, `gray` unknown).
 
 ## Keybindings
 
 - `x` open centered action menu (recommended)
 - `l` refresh profiles
 - `b` busy-state check
+- `g` open stats center (per-profile totals/daily/gain/done-today)
 - `a` add profile flow (mobile prepare + web view + mobile view)
 - `p` prepare mobile profile only
 - `w` start web view/tunnel
@@ -67,6 +71,10 @@ In popup menu, highlighted action now shows:
 - after `b` (busy check), profile rows are color-marked:
   - yellow + `RUN` for currently running profile,
   - green + `DONE` when the profile already completed daily run today.
+- profile legend is shown under the left table for fast interpretation.
+- stats center (`g`) opens as a dedicated modal view built from:
+  - latest `logs/points-snapshot-*.tsv` (if available),
+  - latest `logs/bing-<profile>-daily-*.log` for done-today and gain.
 
 If moving mouse prints escape-like garbage in your terminal, run with
 `--no-mouse` (terminal mouse reporting disabled).
