@@ -121,3 +121,104 @@ Anti-patterns (all hit 2026-09-09):
 - seeding from `test/` (pm-cleared state pollutes the prod profile);
 - plain `cp` without `-a` (loses Android uids → keystore2 panic per #1);
 - `chown` of anything inside a variant volume (see #1, breaks boot).
+
+## 8. AD-login uid (63904568) inside `/data/system` = watchdog kill-loop (2026-10-27)
+
+**Incident.** After a host-side file operation as the AD login user, both worker slots
+booted into `User #0: state=BOOTING` forever; `system_server_watchdog` killed
+`system_server` every ~102 s (`/data/system/dropbox/system_server_watchdog@*.txt.gz`).
+Main-thread stack at kill: `JobSchedulerService.onBootPhase → CountDownLatch.await`
+(the persistent-data latch never fires because `system_server`, uid 1000, cannot write
+`/data/system/job` — it was `drwx------ 63904568:1000`). Same class of symptom as #1
+but a DIFFERENT mechanism: keystore2 was healthy; the blocked service was JobScheduler.
+Collateral log lines to look for: `DiscreteRegistry: Failed to create DiscreteRegistry
+directory`, `Failed to chmod(/data/system/appops/discrete)`, `Failed to chmod
+(/data/system/locksettings.db)`, `BatteryStatsHistory: Failed to create directory`.
+
+**Scope of damage (2026-10-27 scan).** EVERY grid volume had 263–653 files under
+`/data/system` owned by the AD uid (job, appops, dropbox, users/*.xml, package_cache,
+locksettings.db, …), damage in `system_de/0`, `system_ce/0`, `misc_ce/0`, `/data/misc`
+(keystore, apexdata/com.android.tethering/netstats, bootstat, gatekeeper, ethernet…),
+and in app trees (on d5–d8 even `data/com.microsoft.bing` top-level, uid swapped to the
+AD uid while gid 10087 stayed). Some damaged volumes still farmed fine for days —
+damage only breaks boot when it hits a directory a boot-critical service must write
+(mode 0700 + wrong uid = EACCES for the service).
+
+**Second and third crash layer (same boot).** After unblocking JobScheduler the boot
+advanced and revealed: (a) `system_server_crash` NPE in `FileRotator` ←
+`NetworkStatsService.buildRecorder` — with `netstats_store_files_in_apexdata` the real
+data dir is `/data/misc/apexdata/com.android.tethering/netstats` (was `63904568`),
+NOT `/data/system/netstats`; (b) native `ipconfigstore` SIGABRT (`FORTIFY: fwrite:
+null FILE*`) ← unwritable `/data/misc/ethernet`/apexdata ethernet. Both fixed by the
+same uid repair. Lesson: iterate — restart, read the NEW dropbox entry, fix that
+layer; the first watchdog stack is not the only damage.
+
+**Diagnosis.** Root container mount, correct path (variant dir IS `/data`):
+`docker run --rm -v ~/redroid-variants:/host:ro busybox find /host/<p>/system -user 63904568`.
+Note the earlier false-negative trap: mounting whole `$HOME` and looking under
+`redroid-variants/<p>/data/...` finds nothing when the layout is `redroid-variants/<p>/system`
+(variant root = `/data`), and a host-uid scan misses `0700` subtrees entirely.
+BusyBox `find` has NO `-uid` predicate — use `-user <uid>`.
+
+**Fix (verified same day; slots reached `RUNNING_UNLOCKED`, no snapshot rollback).**
+Three passes, all uid-targeted, groups preserved, then `docker restart <slot>`:
+```bash
+# 1) /data/system — all owned by system(1000); blind uid swap is safe here:
+docker run --rm -v $HOME/redroid-variants:/host busybox sh -c \
+  'find /host/<p>/system -user 63904568 -exec chown -h 1000 {} +'
+# 2) system_de / system_ce / misc_ce — system-user trees: uid -> 1000
+# 3) /data/misc — MIXED per-service uids (keystore 1017, bluetooth 1002, webview
+#    shared_relro 1037, installd 0, …). NEVER blind-swap; take uid:gid per path from
+#    a CLEAN reference volume (r_domena_* here): stat the same relpath, chown to
+#    that uid:gid; fallback map only for paths missing in the ref.
+docker restart <slot>   # then poll: dumpsys activity users | grep "User #0"
+```
+This is a RECORD-EXCEPTION to rule #1: it reverses accidental ownership corruption
+back to Android's own uids, entry-by-entry from a scan — NOT a blanket `chown -R`.
+NEVER extend it to app trees (`data/com.microsoft.bing` etc., per-app uids) unless the
+gid is already intact and the uid is verified per volume (d5–d8 app damage was left
+as-is: gid 10087 preserved + group-rwx modes kept those profiles functional — the
+farm earned points on exactly these volumes 25–26.10). Full-volume recovery
+primitive remains the uid-perfect snapshot tar (#1/#2).
+
+**Prevention.** Do not run host-side file operations (`tar`, `cp`, editors, deploy
+scripts) directly inside `~/redroid-variants/*` as the AD login. Stage outside the
+variant tree; snapshot/restore via the docker+tar recipes in `profiles/README.md`.
+
+## 9. Same incident also WIPED app data — sign-ins are the real casualty (2026-10-27)
+
+**Finding.** Beyond the uid damage (#8), the host-side operation destroyed
+`/data/data/com.microsoft.bing` trees: prod_1, prod_2, d4, d9, d10, d11 have EMPTY
+ trees (3 entries: dirs only); d1/d2/d3 trees were deleted and rebuilt FRESH on first
+boot after the incident (every file mtime = today, zero files older than 2 days);
+d5-d8 trees were untouched (historical files + intact `.live.com` cookies). The
+farmer's visible symptom: Rewards page renders the sign-in wall ("Hi, Welcome to
+Microsoft Rewards!" / menu says "Tap to sign in"), tiles never populate, the driver
+logs `daily_points=None->None` yet can still exit `DONE state=daily_done` — a FALSE
+terminal. Treat any run with `daily_points=None` as unverified, never as success.
+
+**Login check without booting (host, per volume):**
+`docker run --rm -v ~/redroid-variants/<p>:/v:ro busybox sh -c "grep -ac live.com
+/v/data/com.microsoft.bing/app_webview/Default/Cookies; find /v/data/com.microsoft.bing -type f | wc -l"`
+— hit count >0 AND tree in the thousands = signed in; 0 hits AND small/empty tree =
+lost account. Authoritative app uid per volume: `/v/system/packages.list` (field 2).
+
+**Recovery.** Restore the whole volume from the uid-perfect snapshot tar
+(recipe in `profiles/README.md`); Microsoft points live server-side, so an old device
+snapshot loses nothing on the account — it only reverts device-local state. Keep the
+damaged tree as `<p>.damaged-<date>` alongside until the restored profile is verified
+`state=rte` (never `wall`). Volumes with intact logins (d5-d8) must NOT be restored.
+
+**After any restore or first boot post-repair, verify BOTH gates before trusting a
+daily run:** (1) network — `docker exec <slot> sh -c "ip route show table eth0"`
+shows the default route and `dumpsys connectivity` reports `IS_VALIDATED` (Android
+policy routing lives in table `eth0`, so `main`-table emptiness is NORMAL; ping is
+ICMP-blocked — test TCP via `echo -e "HEAD / HTTP/1.0\n" | toybox nc -w 4 <ip> 80`);
+(2) login — `./bing.sh run rewards --iters 0 --profile P` must print
+`state=rte`/`state=done`, never `state=wall`.
+
+**Screen sleep trap.** While idle-debugging (>30 min) the display sleeps
+(`mWakefulness=Asleep`, `mCurrentFocus=null`, uiautomator `dump empty` — driver dies
+with "never reached home"). Cron runs never hit it because they start right after a
+container boot. Set `settings put global stay_awake 1` per volume (it persists in the
+volume; re-check after restores — a restored snapshot reverts it).
