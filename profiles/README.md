@@ -21,20 +21,22 @@ credentials) then `factory.ps1 save <name>`. New variant from snapshot:
 ssh piotr.wrotny@10.17.103.115 'p=<name>; docker run --rm -v /home/piotr.wrotny:/host busybox sh -c "mkdir -p /host/redroid-variants/$p && tar -C /host/redroid-variants/$p -xzf /host/profile-snapshots/$p.tar.gz" && cd ~/rewards-farmer-main && ./bing.sh use $p'
 ```
 
-## Cron grid (mobile + web, jedyna prawda dla harmonogramu — stan 2026-10-16)
+## Cron grid (mobile + web, jedyna prawda dla harmonogramu — stan 2026-10-27)
 
 Po stabilizacji 2026-10-14/15 harmonogram działa w trybie:
 
-- **Mobile:** 2 sloty (`redroid` + `redroid-b`), start od rana.
+- **Mobile:** 2 sloty (`redroid` + `redroid-b`), start od północy (01:15→00:30
+  decyzją właściciela 2026-10-27 po incydencie — bufor przed porannym webem).
 - **Web rano:** pełny `run_daily.sh` dla wszystkich profili.
 - **Web wieczorem:** `run_task.sh bonus_points` (claim sweep) dla wszystkich profili.
 
 Backupi crontaba po wdrożeniu stabilizacji/rephase:
-`~/crontab.backup-20261014-133251`, `~/crontab.backup-rephase-20261016-102750`.
+`~/crontab.backup-20261014-133251`, `~/crontab.backup-rephase-20261016-102750`,
+`~/crontab.backup-20261027-pre0030`.
 
 ### Mobile daily (`bing.sh run daily`)
 
-`01:15 prod_1 + prod_2 · 03:05 d1 + d2 · 04:55 d3 + d4 · 06:45 d5 + d6 · 08:35 d7 + d8 · 10:25 d9 + d10 · 12:15 d11`
+`00:30 prod_1 + prod_2 · 03:05 d1 + d2 · 04:55 d3 + d4 · 06:45 d5 + d6 · 08:35 d7 + d8 · 10:25 d9 + d10 · 12:15 d11`
 
 ### Mobile retry dispatcher (domena profiles, optional hardening)
 
